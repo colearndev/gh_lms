@@ -1,0 +1,315 @@
+{
+  "user_profile_analysis": {
+    "profile_id": "uuid",
+    "user_id": "uuid",
+    "created_at": "ISO_DATE",
+    "updated_at": "ISO_DATE",
+
+    "gais_assistance": {
+      "profile_completion_assistance": true,
+
+      "profile_insight_explanation": {
+        "overall_profile_analysis": {
+          "psychological": {},
+          "career_coach": {},
+          "hr_expert": {}
+        },
+        "last_user_data_input_analysis": {},
+        "personal_career_path_analysis": {}
+      },
+
+      "next_step_suggestion": {
+        "profile_completion": [],
+        "professional_development": [],
+        "self_awareness_development": []
+      },
+
+      "weekly_summary": {
+        "user_profile_summary": {},
+        "profile_completion_summary": {}
+      }
+    },
+
+    "categories": {
+
+      "personal_profile": {
+
+        "first_name": {
+          "completion_weight": 70,
+          "value": "",
+          "confidence": 100,
+          "approved": true,
+
+          "data_inputs": [
+            {
+              "type": "manual_text_input",
+              "onboarding": true,
+              "ui_location": "Onboarding Guide / Step 1.a",
+              "confidence": 100
+            },
+            {
+              "type": "social_login_google",
+              "ui_location": "Onboarding Guide / Step 1.b",
+              "confidence": 60,
+              "manual_approval_required": true
+            },
+            {
+              "type": "social_login_apple",
+              "ui_location": "Onboarding Guide / Step 1.b",
+              "confidence": 60,
+              "manual_approval_required": true
+            }
+          ]
+        },
+
+        "last_name": {
+          "completion_weight": 30,
+          "value": "",
+          "confidence": 100,
+          "approved": true,
+
+          "data_inputs": []
+        },
+
+        "personal_goals": {
+          "primary_goal": {
+            "completion_weight": 70,
+
+            "value": {
+              "goal_id": "",
+              "label": ""
+            },
+
+            "assessment_resource": "Personal goal assessment PCPV",
+
+            "data_inputs": [
+              {
+                "type": "manual_selection",
+                "source_db": "Personal goals DB",
+                "onboarding": true,
+                "ui_location": "Onboarding Guide / Step 2",
+                "confidence": 100
+              },
+              {
+                "type": "self_assessed_test",
+                "ui_location": "Explore / Finding personal goals",
+                "confidence": 70,
+                "manual_approval_required": true
+              },
+              {
+                "type": "gais_bot_interaction",
+                "ui_location": "GAIS Bot chat",
+                "confidence": 50,
+                "manual_approval_required": true
+              }
+            ]
+          },
+
+          "secondary_goal": {
+            "completion_weight": 30,
+            "value": {},
+            "data_inputs": []
+          }
+        },
+
+        "life_stage": {
+          "value": {},
+          "assessment_resource": "Life stage analysis",
+
+          "data_inputs": [
+            {
+              "type": "manual_selection",
+              "source_db": "Life stages DB",
+              "onboarding": true,
+              "confidence": 70,
+              "self_assessment_required": true
+            },
+            {
+              "type": "self_assessed_test",
+              "confidence": 70,
+              "manual_approval_required": true
+            },
+            {
+              "type": "gais_bot_interaction",
+              "confidence": 50,
+              "manual_approval_required": true
+            }
+          ]
+        },
+
+        "personality_type_pcpv": {
+          "value": {},
+          "assessment_resource": "Personality type assessment",
+
+          "data_inputs": [
+            {
+              "type": "manual_selection",
+              "source_db": "Personality types DB",
+              "onboarding": true,
+              "confidence": 50,
+              "self_assessment_required": true
+            },
+            {
+              "type": "self_assessed_test",
+              "confidence": 70,
+              "manual_approval_required": true
+            }
+          ]
+        },
+
+        "competency_map_pcpv": {
+          "competencies": [
+            {
+              "competency_id": "",
+              "label": "",
+              "level": 0,
+              "confidence": 0,
+              "source": ""
+            }
+          ],
+
+          "data_inputs": [
+            {
+              "type": "cv_upload",
+              "source": "GapHopper competency theory",
+              "confidence": 80,
+              "manual_approval_required": true
+            },
+            {
+              "type": "manual_edit",
+              "confidence": 100
+            },
+            {
+              "type": "gais_bot_interaction",
+              "confidence": 50,
+              "manual_approval_required": true
+            }
+          ]
+        }
+      },
+
+      "professional_profile": {
+
+        "cv": {
+
+          "work_experience": [
+            {
+              "occupation_id": "",
+              "title": "",
+              "company": "",
+              "start_date": "",
+              "end_date": "",
+              "current": false,
+              "confidence": 100,
+              "source": ""
+            }
+          ],
+
+          "education": [
+            {
+              "institution": "",
+              "degree": "",
+              "level": "",
+              "field": "",
+              "start_date": "",
+              "end_date": "",
+              "confidence": 100
+            }
+          ],
+
+          "certifications": [
+            {
+              "certificate_name": "",
+              "issuer": "",
+              "issue_date": "",
+              "expiration_date": "",
+              "credential_id": ""
+            }
+          ]
+        },
+
+        "target_industry": {
+          "industry_id": "",
+          "label": ""
+        },
+
+        "work_values": [
+          {
+            "value_id": "",
+            "label": "",
+            "score": 0
+          }
+        ]
+      },
+
+      "self_awareness": {
+
+        "learning_agility_onboarding": {
+          "personal_learning_pace": {},
+          "overall_barriers": [],
+          "weekly_time_investment": 0,
+          "learning_days_per_week": 0,
+          "feeling_blocked_level": 0,
+          "best_skill_confidence": 0,
+          "second_best_skill_confidence": 0,
+          "current_field_confidence": 0
+        },
+
+        "learning_agility_pcpv_medium": {
+          "assessment_resource": "Learning agility index assessment PCPV - medium",
+          "score": 0,
+          "confidence": 0
+        },
+
+        "learning_agility_pcpv_large": {
+          "assessment_resource": "Learning agility index assessment PCPV - large",
+          "score": 0,
+          "confidence": 0
+        },
+
+        "personal_motivation_pcpv": {
+          "motivators": [
+            {
+              "motivator_id": "",
+              "label": "",
+              "score": 0
+            }
+          ],
+
+          "assessment_resource": "Personal motivation assessment PCPV"
+        },
+
+        "burnout_index_pcpv": {
+          "score": 0,
+          "risk_level": "",
+          "assessment_resource": "Burnout index assessment",
+          "confidence": 60
+        },
+
+        "adaptability": {
+          "status": "in_progress"
+        },
+
+        "resilience": {
+          "status": "in_progress"
+        },
+
+        "career_awareness": {
+          "assessment_resource": "Career awareness assessment",
+          "score": 0,
+          "confidence": 70
+        }
+      }
+    },
+
+    "profile_completion": {
+      "overall_completion_percentage": 0,
+
+      "category_completion": {
+        "personal_profile": 0,
+        "professional_profile": 0,
+        "self_awareness": 0
+      }
+    }
+  }
+}

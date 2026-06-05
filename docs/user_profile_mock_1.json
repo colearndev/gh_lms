@@ -1,0 +1,158 @@
+{
+  "profile_id": "profile_001",
+  "user_id": "user_anna_kovacs",
+
+  "personal_profile": {
+    "first_name": {
+      "value": "Anna",
+      "confidence": 100
+    },
+
+    "last_name": {
+      "value": "Kovács",
+      "confidence": 100
+    },
+
+    "personal_goals": {
+      "primary_goal": {
+        "goal_id": "career_change",
+        "label": "Transition into UX/UI Design",
+        "confidence": 90
+      },
+
+      "secondary_goal": {
+        "goal_id": "work_life_balance",
+        "label": "Reduce burnout and improve work-life balance",
+        "confidence": 75
+      }
+    },
+
+    "life_stage": {
+      "value": "Young professional with family responsibilities",
+      "confidence": 80
+    },
+
+    "personality_type_pcpv": {
+      "type": "Explorer-Creator",
+      "confidence": 72
+    },
+
+    "competency_map_pcpv": {
+      "competencies": [
+        {
+          "label": "Customer communication",
+          "level": 4,
+          "confidence": 95
+        },
+        {
+          "label": "Graphic design basics",
+          "level": 2,
+          "confidence": 70
+        },
+        {
+          "label": "Figma",
+          "level": 1,
+          "confidence": 60
+        },
+        {
+          "label": "Empathy",
+          "level": 5,
+          "confidence": 85
+        }
+      ]
+    }
+  },
+
+  "professional_profile": {
+    "cv": {
+      "work_experience": [
+        {
+          "title": "Customer Support Specialist",
+          "company": "Telecom Hungary",
+          "start_date": "2021-02-01",
+          "end_date": "2025-03-01",
+          "confidence": 100
+        }
+      ],
+
+      "education": [
+        {
+          "institution": "Budapest Business University",
+          "degree": "BA",
+          "field": "Communication",
+          "confidence": 100
+        }
+      ],
+
+      "certifications": [
+        {
+          "certificate_name": "Google UX Design Certificate",
+          "issuer": "Google",
+          "issue_date": "2026-02-10"
+        }
+      ]
+    },
+
+    "target_industry": {
+      "industry_id": "digital_product_design",
+      "label": "Digital Product Design"
+    },
+
+    "work_values": [
+      {
+        "label": "Creativity",
+        "score": 92
+      },
+      {
+        "label": "Flexibility",
+        "score": 88
+      },
+      {
+        "label": "Meaningful work",
+        "score": 81
+      }
+    ]
+  },
+
+  "self_awareness": {
+    "learning_agility_onboarding": {
+      "personal_learning_pace": "medium_fast",
+      "weekly_time_investment": 8,
+      "learning_days_per_week": 4,
+      "feeling_blocked_level": 6,
+      "best_skill_confidence": 8,
+      "second_best_skill_confidence": 7,
+      "current_field_confidence": 4
+    },
+
+    "learning_agility_pcpv_medium": {
+      "score": 74
+    },
+
+    "personal_motivation_pcpv": {
+      "motivators": [
+        {
+          "label": "Creative expression",
+          "score": 95
+        },
+        {
+          "label": "Helping people",
+          "score": 84
+        }
+      ]
+    },
+
+    "burnout_index_pcpv": {
+      "score": 68,
+      "risk_level": "medium_high"
+    },
+
+    "career_awareness": {
+      "score": 61
+    }
+  },
+
+  "profile_completion": {
+    "overall_completion_percentage": 82
+  }
+}
