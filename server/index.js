@@ -240,6 +240,29 @@ function profileSignal(profile) {
   };
 }
 
+function growthUnitLengthGuide(payload) {
+  const explicitLength = firstText(payload.LENGTH, payload.length, payload.material_length, payload.materialLength, payload.target_length);
+  const signal = profileSignal(payload.profile);
+  const weeklyTime = Number(signal.learningAgility.weekly_time_investment || 0);
+  let minutes = Number(payload.estimated_minutes || payload.estimatedMinutes || 0);
+  if (!minutes) {
+    if (/short|rövid/i.test(explicitLength)) minutes = 5;
+    else if (/long|hossz/i.test(explicitLength)) minutes = 15;
+    else if (/medium|közep/i.test(explicitLength)) minutes = 10;
+    else if (weeklyTime >= 8) minutes = 12;
+    else if (weeklyTime >= 4) minutes = 8;
+    else minutes = 5;
+  }
+  const wordsPerCard = Math.max(350, minutes * 90);
+  return {
+    requested_length: explicitLength || `${minutes} minutes`,
+    target_minutes_per_card: minutes,
+    minimum_words_per_card: wordsPerCard,
+    micro_material_count: minutes >= 10 ? 4 : 3,
+    guidance: `Each Growth Unit card should read like a ${minutes}-minute LMS lesson, not a summary. Use at least ${wordsPerCard} words per card across decision_context, concept_focus.definition, micro_materials, reflection_questions, and recommended_next_action.`
+  };
+}
+
 function extractJson(text, fallback) {
   try {
     return JSON.parse(text);
@@ -258,7 +281,11 @@ async function askGemini(prompt, fallback) {
   requireGemini();
   const body = JSON.stringify({
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { responseMimeType: "application/json" }
+    generationConfig: {
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192,
+      temperature: 0.45
+    }
   });
 
   const models = await getGeminiModelCandidates();
@@ -387,10 +414,11 @@ async function suggest(level, options, profile, context = {}) {
   if (!options || !options.length) {
     throw serviceError("Neo4j returned no graph options for this decision level. No AI suggestions were generated.", 422);
   }
+  const expectedCount = Math.min(5, options.length);
   const fallback = null;
   const prompt = `
 You are a GapHopper career coach. Return JSON only with {"suggestions": []}.
-Rank 3-5 options for decision level ${level}. Be supportive, concise, and do not diagnose stress or burnout.
+Rank exactly ${expectedCount} options for decision level ${level}. Be supportive, concise, and do not diagnose stress or burnout.
 Each suggestion must include code, title, description, reason, fitScore 0-100, risk lower|medium|higher, and nextQuestion.
 Copy code, title, and description exactly from one of the provided options. Do not invent option names.
 Profile signal: ${JSON.stringify(profileSignal(profile))}
@@ -406,7 +434,8 @@ Options: ${JSON.stringify(options.map(normalizeGraphOption).slice(0, 30))}
 
 function normalizeSuggestions(suggestions, options) {
   const normalizedOptions = options.map(normalizeGraphOption);
-  return suggestions.slice(0, 5).map(function (suggestion, index) {
+  const expectedCount = Math.min(5, normalizedOptions.length);
+  const normalized = suggestions.slice(0, expectedCount).map(function (suggestion, index) {
     const source = suggestion && (suggestion.option || suggestion.item || suggestion.node || suggestion.candidate || suggestion.choice) || suggestion;
     const sourceObject = typeof source === "object" && source !== null ? source : { value: source };
     const matched = findMatchingOption(sourceObject, normalizedOptions) ||
@@ -457,6 +486,22 @@ function normalizeSuggestions(suggestions, options) {
       nextQuestion: firstText(suggestion.nextQuestion, suggestion.next_question)
     });
   });
+  const used = new Set(normalized.map(function (item) {
+    return String(item.code || item.uri || item.title || "").toLowerCase();
+  }));
+  normalizedOptions.forEach(function (option) {
+    if (normalized.length >= expectedCount) return;
+    const key = String(option.code || option.uri || option.title || "").toLowerCase();
+    if (used.has(key)) return;
+    used.add(key);
+    normalized.push(Object.assign({}, option, {
+      reason: "Included so the learner can compare at least five available graph options at this stage.",
+      fitScore: null,
+      risk: "medium",
+      nextQuestion: "How does this option compare with the highlighted recommendations?"
+    }));
+  });
+  return normalized;
 }
 
 function findMatchingOption(source, options) {
@@ -482,43 +527,45 @@ function findMatchingOption(source, options) {
   });
 }
 
-function growthUnitDeckShape({ level, options, selectedPath }) {
+function growthUnitDeckShape({ level, options, selectedPath, lengthGuide }) {
   const normalizedOptions = (options || []).map(normalizeGraphOption).slice(0, 5);
   const focus = normalizedOptions[0] || {};
+  const guide = lengthGuide || {};
   return {
     deck_id: "string",
     target_decision_level: level,
     decision_context: `Current path: ${selectedPath && selectedPath.length ? selectedPath.map((item) => item.title).join(" > ") : "not selected yet"}`,
     options_available: normalizedOptions,
+    length_guide: guide,
     growth_units: [
       {
         growth_unit_id: "string",
         reusable_key: `${level}:decision-literacy`,
         title: `Understand the ${level} decision`,
         card_type: "decision_literacy | option_comparison | self_fit_reflection",
-        estimated_minutes: 4,
+        estimated_minutes: guide.target_minutes_per_card || 8,
         profile_adaptation: "Explain how the card length, tone, and pressure level were adapted to the profile.",
         target_decision_level: level,
         user_state_snapshot: "Short profile-relevant state snapshot.",
         decision_question: "What should the learner understand before choosing the next graph node?",
-        decision_context: "Why this decision matters now.",
-        options_compared: normalizedOptions,
+        decision_context: "A substantial explanation of why this decision matters now and what knowledge is needed before choosing.",
         concept_focus: {
           concept_id: focus.code || "decision-fit",
           name: focus.title || "Decision fit",
-          definition: "A concept the learner needs before deciding."
+          definition: "A developed concept explanation the learner needs before deciding, including how the available options should be understood as learning concepts."
         },
         learning_outcomes: [
-          { description: "What the learner should understand after this card." }
+          { description: "The learner can explain the decision concept in their own words." },
+          { description: "The learner can identify which option attributes matter for their personal goal." }
         ],
         practice_outcomes: [
-          { description: "What the learner can do immediately in the app after this card." }
+          { description: "The learner can choose from the right-side Decision Options panel and justify the choice." }
         ],
         micro_materials: [
           {
-            material_type: "explanation | reflection_question | comparison_task | mini_exercise",
+            material_type: "concept_explanation | option_concept_note | reflection_question | mini_exercise",
             title: "string",
-            content: "string",
+            content: "Substantial teaching content, example, or exercise instructions matched to the requested length.",
             focus_concept: "string"
           }
         ],
@@ -537,36 +584,153 @@ function growthUnitDeckShape({ level, options, selectedPath }) {
   };
 }
 
+function fallbackGrowthUnitDeck(payload, lengthGuide) {
+  const normalizedOptions = (payload.options || []).map(normalizeGraphOption).slice(0, 5);
+  const focus = normalizedOptions[0] || {};
+  const level = payload.level || "decision";
+  const pathText = payload.selectedPath && payload.selectedPath.length
+    ? payload.selectedPath.map(function (item) { return item.title; }).join(" > ")
+    : "starting from the broad career graph";
+  const optionTitles = normalizedOptions.map(function (item) { return item.title; }).filter(Boolean).join(", ") || "the current Decision Options";
+  const minutes = lengthGuide.target_minutes_per_card || 8;
+  return {
+    deck_id: `${level}:local-growth-unit`,
+    target_decision_level: level,
+    decision_context: `Current path: ${pathText}`,
+    options_available: normalizedOptions,
+    length_guide: lengthGuide,
+    generated_by: "local_fallback",
+    growth_units: [
+      {
+        growth_unit_id: `${level}:decision-concept`,
+        reusable_key: `${level}:decision-concept`,
+        title: `Understand the ${level} choice before narrowing the path`,
+        card_type: "decision_literacy",
+        estimated_minutes: minutes,
+        profile_adaptation: "This unit keeps the decision practical and grounded in the learner profile, while giving enough explanation to support an informed choice instead of a quick click.",
+        target_decision_level: level,
+        user_state_snapshot: "The learner is narrowing a broad career graph toward a more specific work role and needs enough concept knowledge to compare the visible options.",
+        decision_question: "Which direction best preserves motivation, capability fit, and realistic next-step clarity?",
+        decision_context: `At this stage the learner is not choosing a final job yet; they are reducing a wide search space into a more meaningful path. The visible Decision Options represent possible concepts in the career graph, such as sectors, occupation families, role clusters, or job directions. A useful choice should connect to the learner's goals, existing strengths, values, and learning capacity. The key is to avoid treating the highest-ranked option as automatically correct. Instead, the learner should understand what each option means, what kind of work identity it points toward, and what it would make easier or harder in later steps. The current path is ${pathText}, and the visible options are ${optionTitles}.`,
+        concept_focus: {
+          concept_id: focus.code || "career-search-narrowing",
+          name: "Career search narrowing",
+          definition: "Career search narrowing is the skill of reducing a broad opportunity space into a smaller set of meaningful directions without losing sight of personal fit. It combines three kinds of evidence: goal alignment, capability fit, and future optionality. Goal alignment asks whether the option supports what the learner wants more of in work. Capability fit asks whether existing competencies, experience, and learning agility make the path plausible. Future optionality asks whether the choice keeps enough doors open for the next graph step. The Decision Options should therefore be read as learning concepts, not only as labels. Each option teaches something about the type of work, learning path, and tradeoffs that may follow.",
+        },
+        learning_outcomes: [
+          { description: "The learner can explain how the current decision narrows a broad career search toward a more specific work role." },
+          { description: "The learner can compare Decision Options using goal alignment, capability fit, and future optionality." },
+          { description: "The learner can describe why an option may be useful even when it is not the final job target." }
+        ],
+        practice_outcomes: [
+          { description: "The learner can select one option from the right-side Decision Options panel and state the evidence behind the choice." },
+          { description: "The learner can reject an appealing option when it does not support the next narrowing step." }
+        ],
+        micro_materials: [
+          {
+            material_type: "concept_explanation",
+            title: "Read options as concepts",
+            content: "Before choosing, read each option as a concept that explains a possible direction of work. A sector option is not just an industry label; it suggests environments, problems, customers, tools, and value systems. An occupation option is not just a role family; it suggests recurring tasks, capability requirements, and learning investments. A job option is more concrete, but it still needs interpretation: it points to daily work patterns and expectations. This reading helps the learner avoid shallow matching and instead ask what each option would teach them about their next career step.",
+            focus_concept: "career-search-narrowing"
+          },
+          {
+            material_type: "mini_exercise",
+            title: "Use a three-question filter",
+            content: "For each visible Decision Option, answer three questions before choosing. First: does this option support the learner's primary goal or work values? Second: does it connect to existing competencies, experience, or a realistic learning pace? Third: does it keep the next step clear enough to continue narrowing the graph? If an option scores well on all three, it is a strong candidate. If it scores well on only one, it may still be interesting, but the learner should know what risk or uncertainty they are accepting.",
+            focus_concept: "decision evidence"
+          },
+          {
+            material_type: "option_concept_note",
+            title: "What the shortlist means",
+            content: `The current shortlist contains ${normalizedOptions.length} visible options: ${optionTitles}. This does not mean the rest of the career graph disappeared. It means the system is presenting a smaller, more usable choice set for the current decision. The learner should use the shortlist to make progress, while remembering that each selection opens a new branch and hides many less relevant branches. Good narrowing is not about finding perfection immediately; it is about choosing the next branch that has the best evidence now.`,
+            focus_concept: "shortlist"
+          }
+        ],
+        reflection_questions: [
+          "Which option would make the next step clearer rather than just more interesting?",
+          "What evidence from the profile supports the strongest option?",
+          "Which option looks attractive but may not fit the learner's current learning capacity?"
+        ],
+        option_decision_guidance: normalizedOptions.map(function (option) {
+          return {
+            option_code: option.code || option.uri || option.title,
+            option_title: option.title,
+            when_to_choose: "Choose this when its work direction, capability requirements, and next graph step fit the learner's current goals.",
+            caution: "Do not choose it only because the label sounds appealing; check the evidence from the profile and the next-step clarity."
+          };
+        }),
+        recommended_next_action: "Review the concept, then choose one option from the right-side Decision Options panel."
+      }
+    ]
+  };
+}
+
+function normalizeGrowthUnitDeck(result, payload, lengthGuide) {
+  const fallback = fallbackGrowthUnitDeck(payload, lengthGuide);
+  if (!result) return fallback;
+  const source = Array.isArray(result) ? { growth_units: result } : result;
+  const nestedDeck = source.deck || source.growth_unit_deck || source.growthUnitDeck || {};
+  const units = source.growth_units ||
+    source.growthUnits ||
+    source.units ||
+    source.cards ||
+    nestedDeck.growth_units ||
+    nestedDeck.growthUnits ||
+    nestedDeck.units ||
+    nestedDeck.cards;
+  if (!Array.isArray(units) || !units.length) return fallback;
+  return Object.assign({}, fallback, source, nestedDeck, {
+    deck_id: source.deck_id || nestedDeck.deck_id || fallback.deck_id,
+    target_decision_level: source.target_decision_level || nestedDeck.target_decision_level || fallback.target_decision_level,
+    decision_context: source.decision_context || nestedDeck.decision_context || fallback.decision_context,
+    options_available: source.options_available || nestedDeck.options_available || fallback.options_available,
+    length_guide: source.length_guide || nestedDeck.length_guide || lengthGuide,
+    growth_units: units.map(function (unit, index) {
+      const fallbackUnit = fallback.growth_units[Math.min(index, fallback.growth_units.length - 1)];
+      return Object.assign({}, fallbackUnit, unit, {
+        growth_unit_id: unit.growth_unit_id || unit.id || `${source.deck_id || fallback.deck_id}:${index + 1}`,
+        target_decision_level: unit.target_decision_level || payload.level || fallback.target_decision_level,
+        estimated_minutes: unit.estimated_minutes || lengthGuide.target_minutes_per_card || fallbackUnit.estimated_minutes,
+        learning_outcomes: Array.isArray(unit.learning_outcomes) && unit.learning_outcomes.length ? unit.learning_outcomes : fallbackUnit.learning_outcomes,
+        practice_outcomes: Array.isArray(unit.practice_outcomes) && unit.practice_outcomes.length ? unit.practice_outcomes : fallbackUnit.practice_outcomes,
+        micro_materials: Array.isArray(unit.micro_materials) && unit.micro_materials.length ? unit.micro_materials : fallbackUnit.micro_materials,
+        reflection_questions: Array.isArray(unit.reflection_questions) && unit.reflection_questions.length ? unit.reflection_questions : fallbackUnit.reflection_questions,
+        recommended_next_action: unit.recommended_next_action || fallbackUnit.recommended_next_action
+      });
+    })
+  });
+}
+
 async function growthUnit(payload) {
   if (!payload.options || !payload.options.length) {
     throw serviceError("No current graph options are available. A Growth Unit card deck cannot be generated.", 422);
   }
-  const shape = growthUnitDeckShape(payload);
+  const lengthGuide = growthUnitLengthGuide(payload);
+  const shape = growthUnitDeckShape(Object.assign({}, payload, { lengthGuide }));
   const prompt = `
 Return a reusable Growth Unit card deck as strict JSON using this exact top-level shape:
 ${JSON.stringify(shape)}
-Create 2-3 reusable learning cards. Each card must educate the learner before the current graph decision is made.
+Create 2-3 clean, useful, enjoyable learning cards. Each card must educate the learner before the current graph decision is made.
 The cards are LMS content, not chat answers. They should be reusable for similar users and decisions, but personalized through profile_adaptation and examples.
+Length requirement:
+${JSON.stringify(lengthGuide)}
+Respect the requested LENGTH above. Do not produce short summaries when the requested length implies a longer lesson.
+Each card must meet or exceed minimum_words_per_card across the card fields. Use developed paragraphs, examples, and exercises.
+Keep each card focused: one clear concept, a substantial decision context, 2-3 explicit learning_outcomes, 1-2 practice_outcomes, and the requested number of micro_materials.
+For every micro_materials[] item, write 90-180 words of useful teaching content or exercise instructions, unless the requested length is shorter.
+Every learning_outcomes item must start with "The learner can ..." and describe observable understanding or decision skill.
+Teach the available choices as concepts and knowledge objects, but do not render them as selectable decision cards inside growth_units. Decision Options stay in the app's right sidebar.
 Adapt content length and tone to the user profile:
 - if burnout or blocked level is high, keep cards shorter, lower pressure, and focus on clarity;
-- if learning agility and weekly time are high, include a slightly deeper comparison task;
+- if learning agility and weekly time are high, include deeper examples and a more detailed comparison task;
 - use the user's goals, competencies, values, and work history as examples.
 LMS concepts from docs/LMS Concepts.docx: Learning Goal gives direction; Dynamic Learning Path adapts to the individual; Learning/Growth Units are reusable educational units that support understanding, practice, reflection, and a next decision.
-The next action must be to choose one of the provided graph options in the app. Do not recommend an external interview, portfolio task, or web search as the primary next action.
-Every growth_units[].options_compared item and option_decision_guidance item must correspond to one of the provided graph options.
-Payload: ${JSON.stringify({ ...payload, profile: profileSignal(payload.profile) })}
+The next action must tell the learner to choose one of the provided graph options in the app's right-side Decision Options panel. Do not recommend an external interview, portfolio task, or web search as the primary next action.
+Every option_decision_guidance item must correspond to one of the provided graph options, but keep this guidance explanatory. Do not make it a separate card list inside the growth unit.
+Payload: ${JSON.stringify({ ...payload, lengthGuide, profile: profileSignal(payload.profile) })}
 `;
-  const result = await askGemini(prompt, null);
-  if (!result || !Array.isArray(result.growth_units) || !result.growth_units.length) {
-    throw serviceError("Gemini did not return a valid Growth Unit card deck. Nothing was generated.", 502);
-  }
-  result.growth_units = result.growth_units.map(function (unit, index) {
-    return Object.assign({}, unit, {
-      growth_unit_id: unit.growth_unit_id || `${result.deck_id || "deck"}:${index + 1}`,
-      options_compared: normalizeSuggestions(unit.options_compared || payload.options, payload.options)
-    });
-  });
-  return result;
+  const result = await askGemini(prompt, fallbackGrowthUnitDeck(payload, lengthGuide));
+  return normalizeGrowthUnitDeck(result, payload, lengthGuide);
 }
 
 app.get("/api/status", async (_req, res) => {

@@ -1,0 +1,176 @@
+{
+  "profile_id": "profile_002",
+  "user_id": "user_david_szabo",
+
+  "personal_profile": {
+    "first_name": {
+      "value": "Dávid",
+      "confidence": 100
+    },
+
+    "last_name": {
+      "value": "Szabó",
+      "confidence": 100
+    },
+
+    "personal_goals": {
+      "primary_goal": {
+        "goal_id": "ai_software_engineer",
+        "label": "Become an AI-focused software engineer",
+        "confidence": 93
+      },
+
+      "secondary_goal": {
+        "goal_id": "financial_stability",
+        "label": "Achieve higher financial stability",
+        "confidence": 81
+      }
+    },
+
+    "life_stage": {
+      "value": "Career transition after vocational experience",
+      "confidence": 84
+    },
+
+    "personality_type_pcpv": {
+      "type": "Builder-Strategist",
+      "confidence": 77
+    },
+
+    "competency_map_pcpv": {
+      "competencies": [
+        {
+          "label": "Problem solving",
+          "level": 4,
+          "confidence": 91
+        },
+        {
+          "label": "Python programming",
+          "level": 3,
+          "confidence": 82
+        },
+        {
+          "label": "Linux administration",
+          "level": 2,
+          "confidence": 70
+        },
+        {
+          "label": "Team collaboration",
+          "level": 4,
+          "confidence": 86
+        },
+        {
+          "label": "Machine learning fundamentals",
+          "level": 1,
+          "confidence": 55
+        }
+      ]
+    }
+  },
+
+  "professional_profile": {
+    "cv": {
+      "work_experience": [
+        {
+          "title": "IT Support Technician",
+          "company": "Danube Logistics",
+          "start_date": "2020-09-01",
+          "end_date": "2024-12-15",
+          "confidence": 100
+        },
+        {
+          "title": "Junior Automation Assistant",
+          "company": "SmartFactory Solutions",
+          "start_date": "2025-01-10",
+          "end_date": null,
+          "current": true,
+          "confidence": 92
+        }
+      ],
+
+      "education": [
+        {
+          "institution": "Budapest Technical Vocational Center",
+          "degree": "Technician Diploma",
+          "field": "System Administration",
+          "confidence": 100
+        }
+      ],
+
+      "certifications": [
+        {
+          "certificate_name": "Python for Everybody",
+          "issuer": "Coursera",
+          "issue_date": "2025-11-08"
+        },
+        {
+          "certificate_name": "AWS Cloud Practitioner",
+          "issuer": "Amazon Web Services",
+          "issue_date": "2026-03-14"
+        }
+      ]
+    },
+
+    "target_industry": {
+      "industry_id": "artificial_intelligence",
+      "label": "Artificial Intelligence and Automation"
+    },
+
+    "work_values": [
+      {
+        "label": "Continuous learning",
+        "score": 95
+      },
+      {
+        "label": "Innovation",
+        "score": 88
+      },
+      {
+        "label": "Job security",
+        "score": 74
+      }
+    ]
+  },
+
+  "self_awareness": {
+    "learning_agility_onboarding": {
+      "personal_learning_pace": "fast",
+      "weekly_time_investment": 12,
+      "learning_days_per_week": 5,
+      "feeling_blocked_level": 4,
+      "best_skill_confidence": 7,
+      "second_best_skill_confidence": 6,
+      "current_field_confidence": 5
+    },
+
+    "learning_agility_pcpv_medium": {
+      "score": 82
+    },
+
+    "personal_motivation_pcpv": {
+      "motivators": [
+        {
+          "label": "Building useful systems",
+          "score": 94
+        },
+        {
+          "label": "Career growth",
+          "score": 89
+        }
+      ]
+    },
+
+    "burnout_index_pcpv": {
+      "score": 39,
+      "risk_level": "low_medium"
+    },
+
+    "career_awareness": {
+      "score": 73
+    }
+  },
+
+  "profile_completion": {
+    "overall_completion_percentage": 87
+  }
+}

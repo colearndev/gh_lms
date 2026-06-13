@@ -1,0 +1,171 @@
+{
+  "profile_id": "profile_003",
+  "user_id": "user_eszter_farkas",
+
+  "personal_profile": {
+    "first_name": {
+      "value": "Eszter",
+      "confidence": 100
+    },
+
+    "last_name": {
+      "value": "Farkas",
+      "confidence": 100
+    },
+
+    "personal_goals": {
+      "primary_goal": {
+        "goal_id": "healthcare_career_growth",
+        "label": "Advance into healthcare coordination and patient support",
+        "confidence": 91
+      },
+
+      "secondary_goal": {
+        "goal_id": "community_impact",
+        "label": "Contribute more directly to helping people",
+        "confidence": 78
+      }
+    },
+
+    "life_stage": {
+      "value": "Mid-career professional seeking meaningful progression",
+      "confidence": 82
+    },
+
+    "personality_type_pcpv": {
+      "type": "Supporter-Organizer",
+      "confidence": 80
+    },
+
+    "competency_map_pcpv": {
+      "competencies": [
+        {
+          "label": "Patient communication",
+          "level": 5,
+          "confidence": 94
+        },
+        {
+          "label": "Administrative coordination",
+          "level": 4,
+          "confidence": 88
+        },
+        {
+          "label": "Conflict handling",
+          "level": 4,
+          "confidence": 79
+        },
+        {
+          "label": "Medical documentation",
+          "level": 3,
+          "confidence": 73
+        },
+        {
+          "label": "Empathy",
+          "level": 5,
+          "confidence": 97
+        }
+      ]
+    }
+  },
+
+  "professional_profile": {
+    "cv": {
+      "work_experience": [
+        {
+          "title": "Reception and Patient Administrator",
+          "company": "Central Budapest Medical Clinic",
+          "start_date": "2019-05-01",
+          "end_date": "2024-08-31",
+          "confidence": 100
+        },
+        {
+          "title": "Healthcare Coordinator Assistant",
+          "company": "LifeCare Health Center",
+          "start_date": "2024-09-15",
+          "end_date": null,
+          "current": true,
+          "confidence": 94
+        }
+      ],
+
+      "education": [
+        {
+          "institution": "Semmelweis Vocational Training Center",
+          "degree": "Healthcare Administration Certificate",
+          "field": "Healthcare Support Services",
+          "confidence": 100
+        }
+      ],
+
+      "certifications": [
+        {
+          "certificate_name": "Patient Care Communication Training",
+          "issuer": "Hungarian Healthcare Association",
+          "issue_date": "2025-06-12"
+        }
+      ]
+    },
+
+    "target_industry": {
+      "industry_id": "healthcare_services",
+      "label": "Healthcare Services"
+    },
+
+    "work_values": [
+      {
+        "label": "Helping others",
+        "score": 96
+      },
+      {
+        "label": "Stability",
+        "score": 84
+      },
+      {
+        "label": "Respectful workplace",
+        "score": 87
+      }
+    ]
+  },
+
+  "self_awareness": {
+    "learning_agility_onboarding": {
+      "personal_learning_pace": "medium",
+      "weekly_time_investment": 6,
+      "learning_days_per_week": 3,
+      "feeling_blocked_level": 5,
+      "best_skill_confidence": 9,
+      "second_best_skill_confidence": 8,
+      "current_field_confidence": 7
+    },
+
+    "learning_agility_pcpv_medium": {
+      "score": 69
+    },
+
+    "personal_motivation_pcpv": {
+      "motivators": [
+        {
+          "label": "Supporting people in difficult situations",
+          "score": 95
+        },
+        {
+          "label": "Professional recognition",
+          "score": 72
+        }
+      ]
+    },
+
+    "burnout_index_pcpv": {
+      "score": 58,
+      "risk_level": "medium"
+    },
+
+    "career_awareness": {
+      "score": 66
+    }
+  },
+
+  "profile_completion": {
+    "overall_completion_percentage": 85
+  }
+}

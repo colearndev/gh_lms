@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   AlertCircle,
   Bot,
   Check,
   ChevronRight,
   Database,
+  Eye,
+  EyeOff,
   History,
   Loader2,
   MessageSquare,
@@ -14,7 +17,8 @@ import {
   Send,
   Sparkles,
   Target,
-  Upload
+  Upload,
+  X
 } from "lucide-react";
 import mockProfile from "../docs/user_profile_mock_1.json";
 import "./styles.css";
@@ -26,6 +30,15 @@ const levels = [
   { id: "occupation_l3", label: "Occupation L3" },
   { id: "occupation_l4", label: "Occupation L4" },
   { id: "job", label: "Job" }
+];
+
+const searchSpaceScale = [
+  { label: "All sectors", count: 1200 },
+  { label: "Sector fit", count: 520 },
+  { label: "Occupation families", count: 220 },
+  { label: "Role clusters", count: 90 },
+  { label: "Specific paths", count: 35 },
+  { label: "Job matches", count: 12 }
 ];
 
 async function api(path, options) {
@@ -49,6 +62,18 @@ function valueOf(field, fallback = "Not provided") {
   if (field.label) return field.label;
   if (field.type) return field.type;
   return fallback;
+}
+
+function optionTitle(item, fallback = "Untitled option") {
+  return item?.title || item?.Title || item?.label || item?.Name || item?.name || fallback;
+}
+
+function optionCode(item, fallback = "Option") {
+  return item?.code || item?.Code || item?.uri || item?.id || item?.competency_id || fallback;
+}
+
+function optionKey(item, level = "") {
+  return `${level}:${optionCode(item)}:${optionTitle(item)}`;
 }
 
 function profileSections(profile) {
@@ -91,7 +116,7 @@ function AppShell({ children }) {
   );
 }
 
-function ProfileInput({ rawProfile, onRawProfile, onApply, parseError }) {
+function ProfileInput({ rawProfile, onRawProfile, onApply, onClose, parseError }) {
   function upload(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -101,29 +126,51 @@ function ProfileInput({ rawProfile, onRawProfile, onApply, parseError }) {
   }
 
   return (
-    <section className="panel">
+    <div className="modal-backdrop">
+      <section className="panel profile-input-modal" role="dialog" aria-modal="true" aria-labelledby="profile-input-title">
+        <div className="panel-title modal-title">
+          <div>
+            <Upload size={18} />
+            <h2 id="profile-input-title">Profile Input</h2>
+          </div>
+          <button type="button" className="ghost-button icon-button" onClick={onClose} aria-label="Close profile input">
+            <X size={16} />
+          </button>
+        </div>
+        <textarea
+          className="json-input"
+          value={rawProfile}
+          onChange={(event) => onRawProfile(event.target.value)}
+          spellCheck="false"
+        />
+        {parseError ? <ErrorPanel message={parseError} /> : null}
+        <div className="button-row">
+          <label className="ghost-button">
+            <Upload size={16} />
+            <input type="file" accept="application/json,.json" onChange={upload} />
+            Upload
+          </label>
+          <button type="button" className="primary-button" onClick={onApply}>
+            <Check size={16} />
+            Apply Profile
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ProfileInputLauncher({ onOpen }) {
+  return (
+    <section className="panel compact-panel">
       <div className="panel-title">
         <Upload size={18} />
         <h2>Profile Input</h2>
       </div>
-      <textarea
-        className="json-input"
-        value={rawProfile}
-        onChange={(event) => onRawProfile(event.target.value)}
-        spellCheck="false"
-      />
-      {parseError ? <ErrorPanel message={parseError} /> : null}
-      <div className="button-row">
-        <label className="ghost-button">
-          <Upload size={16} />
-          <input type="file" accept="application/json,.json" onChange={upload} />
-          Upload
-        </label>
-        <button type="button" className="primary-button" onClick={onApply}>
-          <Check size={16} />
-          Apply Profile
-        </button>
-      </div>
+      <button type="button" className="ghost-button full" onClick={onOpen}>
+        <Upload size={16} />
+        Open profile JSON
+      </button>
     </section>
   );
 }
@@ -209,7 +256,7 @@ function ExplorationStepper({ currentLevel }) {
   );
 }
 
-function SuggestionCards({ suggestions, onSelect, loading, level, canChoose }) {
+function SuggestionCards({ suggestions, onSelect, onFocus, focusedOptionKey, loading, level, canChoose }) {
   if (loading) return <LoadingState label="Building suggestions from profile and graph options" />;
   if (!suggestions.length) {
     return <div className="empty-state">No AI suggestions generated. Neo4j and Gemini must both be available.</div>;
@@ -218,13 +265,19 @@ function SuggestionCards({ suggestions, onSelect, loading, level, canChoose }) {
     <div className="suggestions">
       {suggestions.map((item) => {
         const score = item.fitScore ?? item.score ?? item.fit_score ?? "-";
-        const title = item.title || item.Title || "Untitled option";
-        const code = item.code || item.Code || item.uri || "Option";
+        const title = optionTitle(item);
+        const code = optionCode(item);
         const description = item.description || item.Description || item.reason || "No description returned.";
         const reason = item.reason || item.fitReason || item.explanation || "No reason returned.";
         const risk = item.risk || "medium";
+        const key = optionKey(item, level);
+        const focused = key === focusedOptionKey;
         return (
-          <article className="suggestion-card" key={`${level}-${code}-${title}`}>
+          <article
+            className={`suggestion-card ${focused ? "focused" : ""}`}
+            key={key}
+            onClick={() => onFocus(key)}
+          >
             <div className="card-heading">
               <div>
                 <span className="code">{code}</span>
@@ -236,7 +289,10 @@ function SuggestionCards({ suggestions, onSelect, loading, level, canChoose }) {
             <div className="reason">{reason}</div>
             <div className="card-footer">
               <span className={`risk ${risk}`}>{risk} risk</span>
-              <button type="button" onClick={() => onSelect(item)} disabled={!canChoose}>
+              <button type="button" onClick={(event) => {
+                event.stopPropagation();
+                onSelect(item);
+              }} disabled={!canChoose}>
                 {canChoose ? "Choose" : "Review cards"} <ChevronRight size={16} />
               </button>
             </div>
@@ -247,17 +303,32 @@ function SuggestionCards({ suggestions, onSelect, loading, level, canChoose }) {
   );
 }
 
-function GrowthUnitDeck({ deck, selectedUnitId, onSelectUnit, onGenerate, onSelectOption, loading, disabled }) {
+function LearningOutcomeList({ items, fallback }) {
+  const normalized = (items || []).map((item) => {
+    if (typeof item === "string") return item;
+    return item.description || item.outcome || item.text || "";
+  }).filter(Boolean);
+  return (
+    <ul className="outcome-list">
+      {(normalized.length ? normalized : [fallback]).map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+function GrowthUnitDeck({ deck, selectedUnitId, onSelectUnit, onGenerate, loading, disabled }) {
   const units = deck?.growth_units || [];
   const selectedUnit = units.find((unit) => unit.growth_unit_id === selectedUnitId) || units[0];
+  const concept = selectedUnit?.concept_focus || {};
   if (!selectedUnit) {
     return (
       <section className="growth-unit growth-unit-empty">
         <div className="growth-hero">
           <div>
             <span className="brand-kicker">Current LMS object</span>
-            <h2>Generate reusable Growth Unit cards before deciding</h2>
-            <p>Each card teaches one decision concept for this graph stage, adapted to the learner profile. The learner chooses a deeper graph path only after reviewing the cards.</p>
+            <h2>Generate clear Growth Unit cards before deciding</h2>
+            <p>Each card teaches one decision concept, explains the knowledge needed for the available choices, and gives explicit learning outcomes before the learner picks from the Decision Options panel.</p>
           </div>
           <button type="button" className="primary-button growth-action" onClick={onGenerate} disabled={disabled || loading}>
             {loading ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
@@ -271,7 +342,7 @@ function GrowthUnitDeck({ deck, selectedUnitId, onSelectUnit, onGenerate, onSele
     <section className="growth-unit">
       <div className="growth-unit-header">
         <div>
-          <span className="brand-kicker">Reusable Growth Unit Cards</span>
+          <span className="brand-kicker">Focused Growth Unit</span>
           <h2>{selectedUnit.title}</h2>
         </div>
         <button type="button" className="ghost-button" onClick={onGenerate} disabled={disabled || loading}>
@@ -294,10 +365,15 @@ function GrowthUnitDeck({ deck, selectedUnitId, onSelectUnit, onGenerate, onSele
       <p className="growth-meaning">{selectedUnit.decision_context || selectedUnit.meaning}</p>
       <div className="growth-meta">
         <Metric label="Decision" value={selectedUnit.target_decision_level} />
-        <Metric label="Focus" value={selectedUnit.concept_focus?.name || "Decision fit"} />
+        <Metric label="Concept" value={concept.name || "Decision fit"} />
         <Metric label="Length" value={`${selectedUnit.estimated_minutes || 4} min`} />
         <Metric label="Card type" value={selectedUnit.card_type || "learning card"} />
       </div>
+      <section className="learning-block concept-block">
+        <h3>Concept knowledge</h3>
+        <strong>{concept.name || selectedUnit.decision_question || "Decision fit"}</strong>
+        <p className="compact-item">{concept.definition || selectedUnit.decision_question || "Understand what matters in this decision before comparing the available options."}</p>
+      </section>
       {selectedUnit.profile_adaptation ? (
         <section className="learning-block">
           <h3>Profile adaptation</h3>
@@ -306,40 +382,17 @@ function GrowthUnitDeck({ deck, selectedUnitId, onSelectUnit, onGenerate, onSele
       ) : null}
       <section className="learning-block">
         <h3>Learning outcomes</h3>
-        {(selectedUnit.learning_outcomes || []).map((item) => (
-          <p className="compact-item" key={item.description}>{item.description}</p>
-        ))}
+        <LearningOutcomeList
+          items={selectedUnit.learning_outcomes}
+          fallback="The learner can explain the key concept behind this decision and use it to compare the Decision Options."
+        />
       </section>
       <section className="learning-block">
-        <h3>Practice outcomes</h3>
-        {(selectedUnit.practice_outcomes || []).map((item) => (
-          <p className="compact-item" key={item.description}>{item.description}</p>
-        ))}
-      </section>
-      <section className="unit-options">
-        <div className="panel-title">
-          <ChevronRight size={18} />
-          <h3>Choose the next graph path after this card</h3>
-        </div>
-        {(selectedUnit.options_compared || deck.options_available || []).map((item) => {
-          const title = item.title || item.Title || item.name || item.label || "Untitled option";
-          const code = item.code || item.Code || item.uri || title;
-          const reason = item.reason || item.fitReason || item.explanation || item.nextQuestion || "";
-          const risk = item.risk || "medium";
-          return (
-            <article className="unit-option" key={`${code}-${title}`}>
-              <div>
-                <span className="code">{code}</span>
-                <strong>{title}</strong>
-                {reason ? <p>{reason}</p> : null}
-              </div>
-              <button type="button" onClick={() => onSelectOption(item)}>
-                Choose this path <ChevronRight size={16} />
-              </button>
-              <span className={`risk ${risk}`}>{risk} risk</span>
-            </article>
-          );
-        })}
+        <h3>Decision skill outcomes</h3>
+        <LearningOutcomeList
+          items={selectedUnit.practice_outcomes}
+          fallback="The learner can choose one option from the right-side Decision Options panel and state why it fits their current goal."
+        />
       </section>
       <div className="mini-section">
         <h3>Micro materials</h3>
@@ -354,169 +407,442 @@ function GrowthUnitDeck({ deck, selectedUnitId, onSelectUnit, onGenerate, onSele
         </div>
       </div>
       <CompactList title="Reflection" items={selectedUnit.reflection_questions || []} />
-      <div className="next-action">{selectedUnit.recommended_next_action}</div>
+      <div className="next-action">{selectedUnit.recommended_next_action || "Use the Decision Options panel on the right to choose the next graph path."}</div>
     </section>
   );
 }
 
-function Graph3D({ currentLevel, history, suggestions }) {
+function Graph3D({ currentLevel, history, suggestions, focusedOptionKey, onFocusOption }) {
   const mountRef = useRef(null);
+  const [hidden, setHidden] = useState(false);
+  const currentIndex = Math.max(0, levels.findIndex((level) => level.id === currentLevel));
+  const activeScale = searchSpaceScale[currentIndex] || searchSpaceScale[0];
+  const nextScale = searchSpaceScale[Math.min(currentIndex + 1, searchSpaceScale.length - 1)] || activeScale;
+  const narrowedPercent = Math.round((1 - activeScale.count / searchSpaceScale[0].count) * 100);
+  const recommended = suggestions[0] || null;
 
   useEffect(() => {
     const mount = mountRef.current;
-    if (!mount) return undefined;
-
-    const width = mount.clientWidth || 720;
-    const height = mount.clientHeight || 260;
+    if (!mount || hidden) return undefined;
+    const width = mount.clientWidth || 760;
+    const height = mount.clientHeight || 420;
     mount.innerHTML = "";
+
     let renderer;
+    let frame;
+    let controls;
+    let resizeObserver;
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    const clickableNodes = [];
     try {
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0xf7fafa);
+      scene.fog = new THREE.FogExp2(0xf7fafa, 0.036);
 
       const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-      camera.position.set(0, 4.5, 10);
+      camera.position.set(0.8, 7.2, 12.5);
       camera.lookAt(0, 0, 0);
 
-      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
       renderer.setSize(width, height);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       mount.appendChild(renderer.domElement);
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-      const light = new THREE.DirectionalLight(0xffffff, 0.7);
-      light.position.set(4, 7, 5);
-      scene.add(light);
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.enablePan = true;
+      controls.minDistance = 4.2;
+      controls.maxDistance = 22;
+      controls.target.set(0, 0, 0);
 
-      const nodeMaterial = new THREE.MeshStandardMaterial({ color: 0x8fb9b4, roughness: 0.42 });
-      const chosenMaterial = new THREE.MeshStandardMaterial({ color: 0x1f6f67, roughness: 0.35 });
-      const activeMaterial = new THREE.MeshStandardMaterial({ color: 0xd39d45, roughness: 0.32 });
-      const optionMaterial = new THREE.MeshStandardMaterial({ color: 0x6f8790, roughness: 0.55 });
-      const lineMaterial = new THREE.LineBasicMaterial({ color: 0x789196 });
+      scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+      const keyLight = new THREE.DirectionalLight(0xffffff, 0.88);
+      keyLight.position.set(5, 8, 6);
+      scene.add(keyLight);
+      const fillLight = new THREE.DirectionalLight(0xcfe8e4, 0.36);
+      fillLight.position.set(-5, 3, -6);
+      scene.add(fillLight);
 
-      const points = levels.map((level, index) => ({
-        level,
-        position: new THREE.Vector3((index - 2.5) * 1.7, 0, 0),
-        chosen: history.find((item) => item.level === level.id),
-        active: level.id === currentLevel
-      }));
+      const crispPathMaterial = new THREE.LineBasicMaterial({ color: 0x1f6f67, transparent: true, opacity: 0.96 });
+      const suggestedPathMaterial = new THREE.LineBasicMaterial({ color: 0xd39d45, transparent: true, opacity: 0.96 });
+      const fadedLineMaterial = new THREE.LineBasicMaterial({ color: 0x8aa0a5, transparent: true, opacity: 0.16 });
+      const chosenMaterial = new THREE.MeshStandardMaterial({ color: 0x1f6f67, roughness: 0.34, metalness: 0.05 });
+      const activeMaterial = new THREE.MeshStandardMaterial({ color: 0xd39d45, roughness: 0.3, metalness: 0.08 });
+      const suggestedMaterial = new THREE.MeshStandardMaterial({ color: 0xf2c66d, emissive: 0x5b3b07, emissiveIntensity: 0.18, roughness: 0.28 });
+      const optionMaterial = new THREE.MeshStandardMaterial({ color: 0x4f8f97, emissive: 0x163235, emissiveIntensity: 0.08, roughness: 0.36 });
+      const focusedMaterial = new THREE.MeshStandardMaterial({ color: 0xf6a63f, emissive: 0x8c4b07, emissiveIntensity: 0.34, roughness: 0.24 });
+      const fadedMaterial = new THREE.MeshStandardMaterial({ color: 0x9fb4b8, transparent: true, opacity: 0.22, roughness: 0.7 });
+      const cloudMaterial = new THREE.PointsMaterial({ color: 0x7f969b, transparent: true, opacity: 0.16, size: 0.07, depthWrite: false });
+      const haloMaterial = new THREE.MeshBasicMaterial({ color: 0xd39d45, transparent: true, opacity: 0.1, depthWrite: false });
+      const optionHaloMaterial = new THREE.MeshBasicMaterial({ color: 0x4f8f97, transparent: true, opacity: 0.08, depthWrite: false });
+      const focusHaloMaterial = new THREE.MeshBasicMaterial({ color: 0xf6a63f, transparent: true, opacity: 0.18, depthWrite: false });
 
-      points.forEach((point, index) => {
-        const mesh = new THREE.Mesh(
-          new THREE.SphereGeometry(point.active ? 0.24 : 0.18, 32, 16),
-          point.active ? activeMaterial : point.chosen ? chosenMaterial : nodeMaterial
+      function wrapLabelText(ctx, text, maxWidth, maxLines) {
+        const words = String(text || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+        const lines = [];
+        let line = "";
+        words.forEach((word) => {
+          const candidate = line ? `${line} ${word}` : word;
+          if (ctx.measureText(candidate).width <= maxWidth || !line) {
+            line = candidate;
+          } else {
+            lines.push(line);
+            line = word;
+          }
+        });
+        if (line) lines.push(line);
+        return lines.slice(0, maxLines);
+      }
+
+      function makeLabel(text, color = "#25373a", options = {}) {
+        const canvas = document.createElement("canvas");
+        const fontSize = options.fontSize || 30;
+        const maxLines = options.maxLines || 3;
+        const lineHeight = fontSize * 1.2;
+        const horizontalPadding = 34;
+        const verticalPadding = 26;
+        canvas.width = options.width || 640;
+        canvas.height = Math.ceil(verticalPadding * 2 + lineHeight * maxLines);
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = `700 ${fontSize}px Inter, Arial, sans-serif`;
+        ctx.fillStyle = color;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const lines = wrapLabelText(ctx, text, canvas.width - horizontalPadding * 2, maxLines);
+        const usedLines = lines.length || 1;
+        const firstY = canvas.height / 2 - ((usedLines - 1) * lineHeight) / 2;
+        (lines.length ? lines : [String(text || "")]).forEach((line, index) => {
+          ctx.fillText(line, canvas.width / 2, firstY + index * lineHeight);
+        });
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.LinearFilter;
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+        const sprite = new THREE.Sprite(material);
+        const scale = options.scale || 1;
+        sprite.scale.set(scale * 2.6, scale * (0.42 + usedLines * 0.24), 1);
+        return sprite;
+      }
+
+      const graphGroup = new THREE.Group();
+      scene.add(graphGroup);
+
+      const coreNodes = levels.map((level, index) => {
+        const chosen = history.find((item) => item.level === level.id);
+        const isActive = level.id === currentLevel;
+        const isPast = index < currentIndex;
+        const orbitRadius = 0.75 + index * 0.92;
+        const angle = -0.9 + index * 0.82;
+        const position = new THREE.Vector3(
+          Math.cos(angle) * orbitRadius * 1.35,
+          (index - currentIndex) * 0.16,
+          Math.sin(angle) * orbitRadius
         );
-        mesh.position.copy(point.position);
-        scene.add(mesh);
+        return { level, index, chosen, isActive, isPast, position };
+      });
+
+      const cloudPositions = [];
+      levels.forEach((level, stageIndex) => {
+        const center = coreNodes[stageIndex].position;
+        const density = Math.max(18, Math.floor((searchSpaceScale[stageIndex]?.count || 80) / 5));
+        for (let i = 0; i < Math.min(220, density); i += 1) {
+          const angle = i * 2.399 + stageIndex * 0.7;
+          const ring = 0.72 + ((i * 37) % 170) / 48;
+          cloudPositions.push(
+            center.x + Math.cos(angle) * ring,
+            center.y - 1.1 + (((i * 17) % 100) / 100) * 2.3,
+            center.z + Math.sin(angle) * ring * 0.9
+          );
+        }
+      });
+      const cloudGeometry = new THREE.BufferGeometry();
+      cloudGeometry.setAttribute("position", new THREE.Float32BufferAttribute(cloudPositions, 3));
+      graphGroup.add(new THREE.Points(cloudGeometry, cloudMaterial));
+
+      coreNodes.forEach((node, index) => {
+        const isCrisp = node.chosen || node.isActive || node.isPast;
+        const material = node.isActive ? activeMaterial : isCrisp ? chosenMaterial : fadedMaterial;
+        const radius = node.isActive ? 0.22 : isCrisp ? 0.18 : 0.14;
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 32, 18), material);
+        mesh.position.copy(node.position);
+        graphGroup.add(mesh);
+
+        if (node.isActive) {
+          const halo = new THREE.Mesh(new THREE.SphereGeometry(0.56, 32, 18), haloMaterial);
+          halo.position.copy(node.position);
+          graphGroup.add(halo);
+        }
+
+        const label = makeLabel(optionTitle(node.chosen, node.level.label), node.isActive ? "#8b5f13" : isCrisp ? "#1f5c56" : "#7f9296", { maxLines: 2, scale: node.isActive ? 0.9 : 0.78 });
+        label.position.copy(node.position).add(new THREE.Vector3(0, node.isActive ? 0.78 : 0.66, 0));
+        graphGroup.add(label);
 
         if (index > 0) {
-          const geometry = new THREE.BufferGeometry().setFromPoints([points[index - 1].position, point.position]);
-          scene.add(new THREE.Line(geometry, lineMaterial));
+          const prev = coreNodes[index - 1];
+          const lineGeometry = new THREE.BufferGeometry().setFromPoints([prev.position, node.position]);
+          graphGroup.add(new THREE.Line(lineGeometry, index <= currentIndex ? crispPathMaterial : fadedLineMaterial));
         }
       });
 
-      const activePoint = points.find((point) => point.active) || points[0];
-      suggestions.slice(0, 5).forEach((suggestion, index) => {
-        const angle = ((index - 2) / 5) * Math.PI;
-        const optionPosition = activePoint.position.clone().add(new THREE.Vector3(Math.sin(angle) * 1.7, -1.25, Math.cos(angle) * 1.2));
-        const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.13, 24, 12), optionMaterial);
-        mesh.position.copy(optionPosition);
-        scene.add(mesh);
-        const geometry = new THREE.BufferGeometry().setFromPoints([activePoint.position, optionPosition]);
-        scene.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xd39d45 })));
+      const activeNode = coreNodes[currentIndex] || coreNodes[0];
+      const optionCount = Math.max(0, suggestions.length);
+      suggestions.forEach((suggestion, index) => {
+        const key = optionKey(suggestion, currentLevel);
+        const isRecommended = index === 0;
+        const isFocused = key === focusedOptionKey;
+        const angle = index * 2.399 + currentIndex * 0.42;
+        const orbit = 1.18 + Math.sqrt(index + 1) * 0.56;
+        const vertical = Math.sin(index * 1.37) * 0.68 - 0.18;
+        const pos = activeNode.position.clone().add(new THREE.Vector3(
+          Math.cos(angle) * orbit,
+          vertical,
+          Math.sin(angle) * orbit * 0.86
+        ));
+        const material = isFocused ? focusedMaterial : isRecommended ? suggestedMaterial : optionMaterial;
+        const sphere = new THREE.Mesh(new THREE.SphereGeometry(isFocused ? 0.22 : isRecommended ? 0.18 : 0.15, 28, 16), material);
+        sphere.position.copy(pos);
+        sphere.userData.optionKey = key;
+        sphere.userData.optionIndex = index;
+        graphGroup.add(sphere);
+        clickableNodes.push(sphere);
+
+        const halo = new THREE.Mesh(new THREE.SphereGeometry(isFocused ? 0.62 : 0.42, 28, 16), isFocused ? focusHaloMaterial : optionHaloMaterial);
+        halo.position.copy(pos);
+        graphGroup.add(halo);
+
+        const lineOpacity = isFocused ? 0.95 : isRecommended ? 0.78 : 0.46;
+        const lineColor = isFocused ? 0xf6a63f : isRecommended ? 0xd39d45 : 0x4f8f97;
+        const optionLineMaterial = new THREE.LineBasicMaterial({ color: lineColor, transparent: true, opacity: lineOpacity });
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints([activeNode.position, pos]);
+        graphGroup.add(new THREE.Line(lineGeometry, optionLineMaterial));
+
+        if (isFocused || isRecommended || index < 6 || optionCount <= 8) {
+          const color = isFocused ? "#8c4b07" : isRecommended ? "#8b5f13" : "#2f6167";
+          const label = makeLabel(optionTitle(suggestion, `Option ${index + 1}`), color, {
+            fontSize: isFocused ? 32 : 28,
+            maxLines: isFocused ? 4 : 3,
+            scale: isFocused ? 1.05 : 0.82
+          });
+          label.position.copy(pos).add(new THREE.Vector3(0, isFocused ? 1.02 : 0.78, 0));
+          graphGroup.add(label);
+        }
       });
 
-      let frame;
+      for (let i = 0; i < 36; i += 1) {
+        const stage = coreNodes[(i + currentIndex) % coreNodes.length];
+        const angle = i * 1.618;
+        const distance = 2.2 + (i % 7) * 0.44;
+        const pos = stage.position.clone().add(new THREE.Vector3(
+          Math.cos(angle) * distance,
+          Math.sin(i * 0.9) * 0.9,
+          Math.sin(angle) * distance
+        ));
+        const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.065 + (i % 3) * 0.012, 12, 8), fadedMaterial);
+        sphere.position.copy(pos);
+        graphGroup.add(sphere);
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints([stage.position, pos]);
+        graphGroup.add(new THREE.Line(lineGeometry, fadedLineMaterial));
+      }
+
+      controls.target.copy(activeNode.position);
+      camera.position.set(activeNode.position.x + 1.3, 5.2, 9.2);
+
+      function handleClick(event) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        const [hit] = raycaster.intersectObjects(clickableNodes, false);
+        if (hit?.object?.userData?.optionKey) {
+          onFocusOption(hit.object.userData.optionKey);
+        }
+      }
+
+      renderer.domElement.addEventListener("click", handleClick);
+
+      resizeObserver = new ResizeObserver(() => {
+        const nextWidth = mount.clientWidth || width;
+        const nextHeight = mount.clientHeight || height;
+        camera.aspect = nextWidth / nextHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(nextWidth, nextHeight);
+      });
+      resizeObserver.observe(mount);
+
       function animate() {
         frame = requestAnimationFrame(animate);
-        scene.rotation.y += 0.0025;
+        controls.update();
+        const zoomDistance = camera.position.distanceTo(controls.target);
+        cloudMaterial.opacity = THREE.MathUtils.clamp((zoomDistance - 5) / 30, 0.04, 0.18);
+        graphGroup.rotation.y = Math.sin(Date.now() * 0.00018) * 0.025;
         renderer.render(scene, camera);
       }
       animate();
 
       return () => {
         cancelAnimationFrame(frame);
+        resizeObserver?.disconnect();
+        renderer.domElement.removeEventListener("click", handleClick);
+        controls?.dispose();
         renderer.dispose();
         mount.innerHTML = "";
       };
     } catch (error) {
-      drawIsometricGraphFallback(mount, width, height, currentLevel, history, suggestions);
+      drawCareerGraphFallback(mount, width, height, currentIndex, suggestions);
       return () => {
         mount.innerHTML = "";
       };
     }
-  }, [currentLevel, history, suggestions]);
+  }, [currentLevel, currentIndex, focusedOptionKey, hidden, history, onFocusOption, recommended, suggestions]);
+
+  if (hidden) {
+    return (
+      <section className="graph-3d-panel graph-3d-panel-collapsed">
+        <div className="panel-title graph-panel-title">
+          <div>
+            <Database size={18} />
+            <h2>3D Competency Graph</h2>
+          </div>
+          <button type="button" className="ghost-button icon-button" onClick={() => setHidden(false)} aria-label="Show graph visualization">
+            <Eye size={16} />
+            Show
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section className="graph-3d-panel">
-      <div className="panel-title">
-        <Database size={18} />
-        <h2>3D Path Graph</h2>
+    <section className="graph-3d-panel search-map-panel">
+      <div className="panel-title graph-panel-title">
+        <div>
+          <Database size={18} />
+          <h2>3D Competency Graph</h2>
+        </div>
+        <button type="button" className="ghost-button icon-button" onClick={() => setHidden(true)} aria-label="Hide graph visualization">
+          <EyeOff size={16} />
+          Hide
+        </button>
       </div>
-      <div className="graph-3d-canvas" ref={mountRef} />
+      <div className="search-map">
+        <div className="career-graph-canvas" ref={mountRef} />
+        <div className="graph-viz-overlay">Click option nodes · drag to orbit · scroll to zoom</div>
+        <div className="search-flow">
+          {levels.map((level, index) => {
+            const chosen = history.find((item) => item.level === level.id);
+            const active = level.id === currentLevel;
+            const reached = Boolean(chosen) || index <= currentIndex;
+            return (
+              <div className={`search-step ${active ? "active" : ""} ${chosen ? "chosen" : ""} ${reached ? "reached" : ""}`} key={level.id}>
+                <span className="step-count">{searchSpaceScale[index]?.count || "?"}</span>
+                <strong>{level.label}</strong>
+                <p>{chosen?.title || (active ? "choosing now" : index < currentIndex ? "passed" : "ahead")}</p>
+              </div>
+            );
+          })}
+        </div>
+        <div className="search-direction">
+          <div>
+            <span className="brand-kicker">Started from</span>
+            <strong>Broad career graph</strong>
+            <p>{searchSpaceScale[0].count}+ possible directions</p>
+          </div>
+          <ChevronRight size={22} />
+          <div>
+            <span className="brand-kicker">Moving toward</span>
+            <strong>{levels[currentIndex]?.label || "Job"} fit</strong>
+            <p>{suggestions.length || nextScale.count} visible next choices</p>
+          </div>
+        </div>
+      </div>
+      <div className="narrowing-strip">
+        <div>
+          <span className="brand-kicker">Search space narrowed</span>
+          <strong>{Math.max(0, narrowedPercent)}%</strong>
+        </div>
+        <div className="narrowing-bar" aria-label={`Search space narrowed ${Math.max(0, narrowedPercent)} percent`}>
+          <span style={{ width: `${Math.max(8, narrowedPercent)}%` }} />
+        </div>
+        <p>{activeScale.count} approximate directions remain at this stage; the blurred field shows the wider opportunity space still behind the shortlist.</p>
+      </div>
       <div className="graph-legend">
         <span><i className="chosen-dot" /> chosen path</span>
         <span><i className="active-dot" /> current stage</span>
-        <span><i className="option-dot" /> available deeper options</span>
+        <span><i className="suggested-dot" /> suggested next path</span>
+        <span><i className="option-dot" /> faded graph context</span>
       </div>
     </section>
   );
 }
 
-function drawIsometricGraphFallback(mount, width, height, currentLevel, history, suggestions) {
+function drawCareerGraphFallback(mount, width, height, currentIndex, suggestions) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  canvas.className = "graph-fallback-canvas";
   mount.appendChild(canvas);
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#f7fafa";
   ctx.fillRect(0, 0, width, height);
 
-  const y = height * 0.48;
-  const spacing = width / 7;
-  const nodes = levels.map((level, index) => ({
-    x: spacing * (index + 1),
-    y: y + (index % 2 ? -18 : 18),
-    chosen: history.find((item) => item.level === level.id),
-    active: level.id === currentLevel,
-    label: level.label
+  for (let i = 0; i < 120; i += 1) {
+    const x = 24 + ((i * 47) % Math.max(1, width - 48));
+    const y = 24 + ((i * 83) % Math.max(1, height - 80));
+    ctx.fillStyle = "rgba(111, 135, 144, 0.18)";
+    ctx.beginPath();
+    ctx.arc(x, y, 2 + (i % 3), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const stepWidth = width / (levels.length + 1);
+  const centerY = height * 0.48;
+  const points = levels.map((level, index) => ({
+    x: stepWidth * (index + 1),
+    y: centerY,
+    radius: 34 - index * 4
   }));
 
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = "#789196";
-  ctx.beginPath();
-  nodes.forEach((node, index) => {
-    if (index === 0) ctx.moveTo(node.x, node.y);
-    else ctx.lineTo(node.x, node.y);
+  points.forEach((point, index) => {
+    if (index > 0) {
+      ctx.strokeStyle = index <= currentIndex ? "#1f6f67" : "rgba(120, 145, 150, 0.45)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(points[index - 1].x, points[index - 1].y);
+      ctx.lineTo(point.x, point.y);
+      ctx.stroke();
+    }
   });
-  ctx.stroke();
 
-  nodes.forEach((node) => {
+  points.forEach((point, index) => {
+    ctx.fillStyle = index === currentIndex ? "#d39d45" : index < currentIndex ? "#1f6f67" : "rgba(159, 183, 187, 0.65)";
     ctx.beginPath();
-    ctx.fillStyle = node.active ? "#d39d45" : node.chosen ? "#1f6f67" : "#8fb9b4";
-    ctx.arc(node.x, node.y, node.active ? 16 : 12, 0, Math.PI * 2);
+    ctx.ellipse(point.x, point.y, point.radius, Math.max(10, point.radius * 0.38), 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#263739";
-    ctx.font = "12px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(node.label, node.x, node.y + 34);
+    const shouldLabel = width >= 560 || index === 0 || index === currentIndex || index === levels.length - 1;
+    if (shouldLabel) {
+      ctx.fillStyle = "#223033";
+      ctx.font = width >= 560 ? "12px sans-serif" : "10px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(levels[index].label, point.x, point.y + 42);
+    }
   });
 
-  const activeNode = nodes.find((node) => node.active) || nodes[0];
-  suggestions.slice(0, 5).forEach((option, index) => {
-    const ox = activeNode.x + (index - 2) * 38;
-    const oy = activeNode.y + 78 + Math.abs(index - 2) * 8;
-    ctx.strokeStyle = "#d39d45";
+  const activePoint = points[currentIndex] || points[0];
+  const visibleOptions = Math.max(3, Math.min(5, suggestions.length || 5));
+  for (let index = 0; index < visibleOptions; index += 1) {
+    const x = activePoint.x + (index - 2) * 28;
+    const y = activePoint.y + 72 + Math.abs(index - 2) * 5;
+    ctx.strokeStyle = "rgba(211, 157, 69, 0.75)";
     ctx.beginPath();
-    ctx.moveTo(activeNode.x, activeNode.y);
-    ctx.lineTo(ox, oy);
+    ctx.moveTo(activePoint.x, activePoint.y);
+    ctx.lineTo(x, y);
     ctx.stroke();
     ctx.fillStyle = "#6f8790";
     ctx.beginPath();
-    ctx.arc(ox, oy, 8, 0, Math.PI * 2);
+    ctx.arc(x, y, 6, 0, Math.PI * 2);
     ctx.fill();
-  });
+  }
 }
 
 function GraphPosition({ currentLevel, history, suggestions }) {
@@ -658,8 +984,10 @@ function App() {
   const [currentLevel, setCurrentLevel] = useState("sector");
   const [history, setHistory] = useState([]);
   const [suggestions, setSuggestions] = useState([]);
+  const [focusedOptionKey, setFocusedOptionKey] = useState("");
   const [growthDeck, setGrowthDeck] = useState(null);
   const [selectedGrowthUnitId, setSelectedGrowthUnitId] = useState(null);
+  const [profileInputOpen, setProfileInputOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sideLoading, setSideLoading] = useState(false);
   const [error, setError] = useState("");
@@ -689,7 +1017,9 @@ function App() {
       setGrowthDeck(null);
       setSelectedGrowthUnitId(null);
       setHistory([]);
+      setFocusedOptionKey("");
       setCurrentLevel("sector");
+      setProfileInputOpen(false);
     } catch (err) {
       setParseError(err.message);
     }
@@ -698,6 +1028,7 @@ function App() {
   async function loadLevel(level) {
     setLoading(true);
     setError("");
+    setFocusedOptionKey("");
     setGrowthDeck(null);
     setSelectedGrowthUnitId(null);
     try {
@@ -727,7 +1058,9 @@ function App() {
         method: "POST",
         body: JSON.stringify({ profile, options, context, level })
       });
-      setSuggestions(ranked.suggestions || []);
+      const nextSuggestions = ranked.suggestions || [];
+      setSuggestions(nextSuggestions);
+      setFocusedOptionKey(nextSuggestions[0] ? optionKey(nextSuggestions[0], level) : "");
     } catch (err) {
       setError(err.message);
       setSuggestions([]);
@@ -740,6 +1073,7 @@ function App() {
     const nextHistory = [...history, { ...item, level: currentLevel }];
     setHistory(nextHistory);
     setSuggestions([]);
+    setFocusedOptionKey("");
     setGrowthDeck(null);
     setSelectedGrowthUnitId(null);
     const index = levels.findIndex((level) => level.id === currentLevel);
@@ -782,6 +1116,7 @@ function App() {
   function resetPath() {
     setHistory([]);
     setCurrentLevel("sector");
+    setFocusedOptionKey("");
     setGrowthDeck(null);
     setSelectedGrowthUnitId(null);
   }
@@ -792,12 +1127,13 @@ function App() {
       <ServiceWarning status={status} />
       <main className="workspace">
         <aside className="left-column">
-          <ProfileInput rawProfile={rawProfile} onRawProfile={setRawProfile} onApply={applyProfile} parseError={parseError} />
-          <ProfileSummary profile={profile} />
+          <ChatPanel messages={messages} onSend={sendChat} loading={sideLoading} />
           <DecisionHistory history={history} onReset={resetPath} />
+          <ProfileSummary profile={profile} />
+          <ProfileInputLauncher onOpen={() => setProfileInputOpen(true)} />
         </aside>
         <section className="center-column">
-          <Graph3D currentLevel={currentLevel} history={history} suggestions={suggestions} />
+          <Graph3D currentLevel={currentLevel} history={history} suggestions={suggestions} focusedOptionKey={focusedOptionKey} onFocusOption={setFocusedOptionKey} />
           <GraphPosition currentLevel={currentLevel} history={history} suggestions={suggestions} />
           <div className="level-header">
             <div>
@@ -810,7 +1146,7 @@ function App() {
             </button>
           </div>
           {error ? <ErrorPanel message={error} /> : null}
-          <GrowthUnitDeck deck={growthDeck} selectedUnitId={selectedGrowthUnitId} onSelectUnit={setSelectedGrowthUnitId} onGenerate={generateGrowthUnit} onSelectOption={choose} loading={sideLoading} disabled={!suggestions.length} />
+          <GrowthUnitDeck deck={growthDeck} selectedUnitId={selectedGrowthUnitId} onSelectUnit={setSelectedGrowthUnitId} onGenerate={generateGrowthUnit} loading={sideLoading} disabled={!suggestions.length} />
         </section>
         <aside className="right-column">
           <section className="panel">
@@ -820,10 +1156,18 @@ function App() {
             </div>
             <p className="side-note">Choose only after the Growth Unit has clarified the decision.</p>
           </section>
-          <SuggestionCards suggestions={suggestions} onSelect={choose} loading={loading} level={currentLevel} canChoose={Boolean(growthDeck)} />
-          <ChatPanel messages={messages} onSend={sendChat} loading={sideLoading} />
+          <SuggestionCards suggestions={suggestions} onSelect={choose} onFocus={setFocusedOptionKey} focusedOptionKey={focusedOptionKey} loading={loading} level={currentLevel} canChoose={Boolean(growthDeck)} />
         </aside>
       </main>
+      {profileInputOpen ? (
+        <ProfileInput
+          rawProfile={rawProfile}
+          onRawProfile={setRawProfile}
+          onApply={applyProfile}
+          onClose={() => setProfileInputOpen(false)}
+          parseError={parseError}
+        />
+      ) : null}
     </AppShell>
   );
 }
