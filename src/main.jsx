@@ -270,7 +270,7 @@ function canShowCompetencyProfile(level) {
   return level === "job" || level.startsWith("occupation");
 }
 
-function SuggestionCards({ suggestions, onSelect, onFocus, onOpenCompetencies, focusedOptionKey, loading, level, canChoose }) {
+function SuggestionCards({ suggestions, onSelect, onFocus, onOpenCompetencies, focusedOptionKey, loading, level }) {
   if (loading) return <LoadingState label="Building suggestions from profile and graph options" />;
   if (!suggestions.length) {
     return <div className="empty-state">No AI suggestions generated. Neo4j and Gemini must both be available.</div>;
@@ -318,8 +318,8 @@ function SuggestionCards({ suggestions, onSelect, onFocus, onOpenCompetencies, f
               <button type="button" onClick={(event) => {
                 event.stopPropagation();
                 onSelect(item);
-              }} disabled={!canChoose}>
-                {canChoose ? "Choose" : "Review cards"} <ChevronRight size={16} />
+              }}>
+                Choose <ChevronRight size={16} />
               </button>
             </div>
           </article>
@@ -1221,9 +1221,9 @@ function App() {
               <ChevronRight size={18} />
               <h2>Decision Options</h2>
             </div>
-            <p className="side-note">Choose only after the Growth Unit has clarified the decision.</p>
+            <p className="side-note">Choose an option directly, or generate a Growth Unit first for extra context.</p>
           </section>
-          <SuggestionCards suggestions={suggestions} onSelect={choose} onFocus={setFocusedOptionKey} onOpenCompetencies={openCompetencyProfile} focusedOptionKey={focusedOptionKey} loading={loading} level={currentLevel} canChoose={Boolean(growthDeck)} />
+          <SuggestionCards suggestions={suggestions} onSelect={choose} onFocus={setFocusedOptionKey} onOpenCompetencies={openCompetencyProfile} focusedOptionKey={focusedOptionKey} loading={loading} level={currentLevel} />
         </aside>
       </main>
       {profileInputOpen ? (
