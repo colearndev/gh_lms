@@ -3,6 +3,7 @@ const fs = require("fs");
 const https = require("https");
 const path = require("path");
 const neo4j = require("neo4j-driver");
+const { createGrowthUnitPrompt } = require("./prompts/growthUnitPrompt");
 
 function loadDotEnv() {
   const envPath = path.resolve(process.cwd(), ".env");
@@ -28,6 +29,8 @@ loadDotEnv();
 const app = express();
 const port = process.env.PORT || 8787;
 const preferredGeminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+const DEFAULT_ESSENTIAL_WEIGHT = 2;
+const DEFAULT_OPTIONAL_WEIGHT = 1;
 
 app.use(express.json({ limit: "4mb" }));
 
@@ -206,6 +209,256 @@ async function getCompetenciesForJob(jobCode) {
   return rows;
 }
 
+function requirementWeight(requirement, essentialWeight, optionalWeight) {
+  return String(requirement || "").trim().toLowerCase() === "essential"
+    ? essentialWeight
+    : optionalWeight;
+}
+
+function mergeWeightedCompetencyRows(rows, essentialWeight, optionalWeight, limit) {
+  const aggregates = new Map();
+  const seenHits = new Set();
+
+  rows.forEach(function (row) {
+    const compKey = firstText(row.uri, row.Code, row.code, row.Title, row.title);
+    if (!compKey) return;
+
+    const requirement = firstText(row.requirement, "optional").toLowerCase();
+    const hitKey = [
+      compKey,
+      firstText(row.job_uri, row.jobUri),
+      firstText(row.source),
+      requirement
+    ].join("|");
+    if (seenHits.has(hitKey)) return;
+    seenHits.add(hitKey);
+
+    if (!aggregates.has(compKey)) {
+      aggregates.set(compKey, {
+        uri: firstText(row.uri),
+        Code: firstText(row.Code, row.code),
+        code: firstText(row.code, row.Code),
+        Title: firstText(row.Title, row.title),
+        title: firstText(row.title, row.Title),
+        Title_HU: firstText(row.Title_HU, row.titleHu),
+        titleHu: firstText(row.titleHu, row.Title_HU),
+        Type: firstText(row.Type, row.type),
+        type: firstText(row.type, row.Type),
+        Category: firstText(row.Category, row.category),
+        category: firstText(row.category, row.Category),
+        Description: firstText(row.Description, row.description),
+        description: firstText(row.description, row.Description),
+        score: 0,
+        hits: 0,
+        job_count: 0,
+        essential_hits: 0,
+        optional_hits: 0,
+        sources: [],
+        jobs: [],
+        _jobUris: new Set()
+      });
+    }
+
+    const aggregate = aggregates.get(compKey);
+    aggregate.score += requirementWeight(requirement, essentialWeight, optionalWeight);
+    aggregate.hits += 1;
+    if (requirement === "essential") aggregate.essential_hits += 1;
+    else aggregate.optional_hits += 1;
+
+    const source = firstText(row.source);
+    const jobTitle = firstText(row.job_title, row.jobTitle);
+    const jobUri = firstText(row.job_uri, row.jobUri);
+    if (source && aggregate.sources.indexOf(source) === -1) aggregate.sources.push(source);
+    if (jobTitle && aggregate.jobs.indexOf(jobTitle) === -1) aggregate.jobs.push(jobTitle);
+    if (jobUri) aggregate._jobUris.add(jobUri);
+  });
+
+  return Array.from(aggregates.values()).map(function (row) {
+    row.score = Math.round(row.score * 100) / 100;
+    row.job_count = row._jobUris.size;
+    row.jobCount = row.job_count;
+    row.essentialHits = row.essential_hits;
+    row.optionalHits = row.optional_hits;
+    row.sources = row.sources.slice(0, 8);
+    row.jobs = row.jobs.slice(0, 8);
+    delete row._jobUris;
+    return row;
+  }).sort(function (a, b) {
+    return (b.score - a.score) ||
+      (b.essential_hits - a.essential_hits) ||
+      firstText(a.Title, a.Code).localeCompare(firstText(b.Title, b.Code));
+  }).slice(0, limit);
+}
+
+async function getNodeSummary(identifier) {
+  const rows = await readQuery(`
+    MATCH (n)
+    WHERE (n.uri = $identifier OR n.Code = $identifier) AND (n:Occupation OR n:Job)
+    RETURN labels(n) AS labels,
+           n.uri AS uri,
+           n.Code AS code,
+           n.Level AS level,
+           coalesce(n.Title, n.Title_HU, n.Code) AS title,
+           coalesce(n.Title_HU, n.Title, n.Code) AS titleHu,
+           coalesce(n.Description, n.Description_HU, "") AS description
+    LIMIT 1
+  `, { identifier });
+  return rows[0] || null;
+}
+
+async function getDownstreamJobsForNode(identifier) {
+  return readQuery(`
+    MATCH (start)
+    WHERE (start.uri = $identifier OR start.Code = $identifier)
+      AND (start:Occupation OR start:Job)
+    CALL {
+      WITH start
+      WITH start WHERE start:Job
+      RETURN start AS job
+      UNION
+      WITH start
+      WITH start WHERE start:Occupation
+      MATCH (job:Job)-[:HasParentOccupation*0..]->(start)
+      RETURN job AS job
+    }
+    RETURN DISTINCT job.uri AS uri,
+           job.Code AS code,
+           job.Level AS level,
+           coalesce(job.Title, job.Title_HU, job.Code) AS title,
+           coalesce(job.Title_HU, job.Title, job.Code) AS titleHu,
+           coalesce(job.Description, job.Description_HU, "") AS description
+    ORDER BY code, title
+  `, { identifier });
+}
+
+async function aggregateEscoCompetencies(jobUris, essentialWeight, optionalWeight, limit) {
+  if (!jobUris.length) return [];
+  const directRows = await readQuery(`
+    MATCH (job:Job)-[job_req:RequiresCompetency]->(competency:Competency)
+    WHERE job.uri IN $jobUris
+      AND NOT EXISTS {
+        MATCH (:Competency)-[:HasParentCompetency]->(competency)
+      }
+    RETURN DISTINCT competency.uri AS uri,
+           competency.Code AS code,
+           competency.Code AS Code,
+           competency.Title AS title,
+           competency.Title AS Title,
+           competency.Title_HU AS titleHu,
+           competency.Title_HU AS Title_HU,
+           competency.Type AS type,
+           competency.Type AS Type,
+           competency.Category AS category,
+           competency.Category AS Category,
+           competency.Description AS description,
+           competency.Description AS Description,
+           toLower(coalesce(job_req.relation_type, job_req.connection_type, job_req.Type, "optional")) AS requirement,
+           coalesce(job.Title, job.Code, job.uri) AS source,
+           job.uri AS job_uri,
+           coalesce(job.Title, job.Code, job.uri) AS job_title
+  `, { jobUris });
+  const viaConceptRows = await readQuery(`
+    MATCH (job:Job)-[job_req:RequiresCompetency]->(concept)
+    WHERE job.uri IN $jobUris
+      AND any(label IN labels(concept) WHERE label IN ["Activity", "Tool"])
+    MATCH (concept)-[:HasParentCompetency|RequiresCompetency]->(competency:Competency)
+    WHERE NOT EXISTS {
+      MATCH (:Competency)-[:HasParentCompetency]->(competency)
+    }
+    RETURN DISTINCT competency.uri AS uri,
+           competency.Code AS code,
+           competency.Code AS Code,
+           competency.Title AS title,
+           competency.Title AS Title,
+           competency.Title_HU AS titleHu,
+           competency.Title_HU AS Title_HU,
+           competency.Type AS type,
+           competency.Type AS Type,
+           competency.Category AS category,
+           competency.Category AS Category,
+           competency.Description AS description,
+           competency.Description AS Description,
+           toLower(coalesce(job_req.relation_type, job_req.connection_type, job_req.Type, "optional")) AS requirement,
+           coalesce(concept.Title, concept.Code, concept.uri) AS source,
+           job.uri AS job_uri,
+           coalesce(job.Title, job.Code, job.uri) AS job_title
+  `, { jobUris });
+  return mergeWeightedCompetencyRows(directRows.concat(viaConceptRows), essentialWeight, optionalWeight, limit);
+}
+
+async function aggregateGhCompetencies(jobUris, essentialWeight, optionalWeight, limit) {
+  if (!jobUris.length) return [];
+  const directRows = await readQuery(`
+    MATCH (job:Job)-[gh_req:GH_RequiresCompetency]->(gh:GH_Competency)
+    WHERE job.uri IN $jobUris
+      AND NOT EXISTS {
+        MATCH (:GH_Competency)-[:GH_HasParentCompetency]->(gh)
+      }
+    RETURN DISTINCT gh.uri AS uri,
+           gh.Code AS code,
+           gh.Code AS Code,
+           gh.Title AS title,
+           gh.Title AS Title,
+           gh.Title_HU AS titleHu,
+           gh.Title_HU AS Title_HU,
+           gh.Type AS type,
+           gh.Type AS Type,
+           gh.Description AS description,
+           gh.Description AS Description,
+           toLower(coalesce(gh_req.connection_type, gh_req.relation_type, gh_req.Type, "optional")) AS requirement,
+           coalesce(job.Title, job.Code, job.uri) AS source,
+           job.uri AS job_uri,
+           coalesce(job.Title, job.Code, job.uri) AS job_title
+  `, { jobUris });
+  const viaConceptRows = await readQuery(`
+    MATCH (job:Job)-[job_req:RequiresCompetency]->(concept)-[:GH_RequiresCompetency]->(gh:GH_Competency)
+    WHERE job.uri IN $jobUris
+      AND any(label IN labels(concept) WHERE label IN ["Activity", "Tool", "Competency"])
+      AND NOT EXISTS {
+        MATCH (:GH_Competency)-[:GH_HasParentCompetency]->(gh)
+      }
+    RETURN DISTINCT gh.uri AS uri,
+           gh.Code AS code,
+           gh.Code AS Code,
+           gh.Title AS title,
+           gh.Title AS Title,
+           gh.Title_HU AS titleHu,
+           gh.Title_HU AS Title_HU,
+           gh.Type AS type,
+           gh.Type AS Type,
+           gh.Description AS description,
+           gh.Description AS Description,
+           toLower(coalesce(job_req.relation_type, job_req.connection_type, job_req.Type, "optional")) AS requirement,
+           coalesce(concept.Title, concept.Code, concept.uri) AS source,
+           job.uri AS job_uri,
+           coalesce(job.Title, job.Code, job.uri) AS job_title
+  `, { jobUris });
+  return mergeWeightedCompetencyRows(directRows.concat(viaConceptRows), essentialWeight, optionalWeight, limit);
+}
+
+async function getWeightedCompetencyProfile(identifier, options) {
+  const essentialWeight = Number(options.essentialWeight || DEFAULT_ESSENTIAL_WEIGHT);
+  const optionalWeight = Number(options.optionalWeight || DEFAULT_OPTIONAL_WEIGHT);
+  const limit = Math.max(10, Math.min(500, Number(options.limit || 100)));
+  const node = await getNodeSummary(identifier);
+  if (!node) throw serviceError("No Occupation or Job node was found for this card.", 404);
+  const jobs = await getDownstreamJobsForNode(identifier);
+  const jobUris = jobs.map(function (job) { return job.uri; }).filter(Boolean);
+  const competencies = await aggregateEscoCompetencies(jobUris, essentialWeight, optionalWeight, limit);
+  const ghCompetencies = await aggregateGhCompetencies(jobUris, essentialWeight, optionalWeight, limit);
+  return {
+    node,
+    jobs,
+    competencies,
+    gh_competencies: ghCompetencies,
+    ghCompetencies,
+    weights: {
+      essential: essentialWeight,
+      optional: optionalWeight
+    }
+  };
+}
+
 async function getSectorsForNode(code) {
   const rows = await readQuery(`
     MATCH (n)-[:RelatedSector]->(s:Sector)
@@ -292,17 +545,28 @@ async function askGemini(prompt, fallback) {
   var lastError = null;
   for (var i = 0; i < models.length; i += 1) {
     try {
-      const text = await postGeminiGenerateContent(models[i], body);
+      const text = await postGeminiGenerateContentWithRetry(models[i], body);
       const parsed = JSON.parse(text);
       const candidate = parsed.candidates && parsed.candidates[0];
       const part = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0];
       return extractJson((part && part.text) || "", fallback);
     } catch (error) {
       lastError = error;
-      if (error.statusCode !== 404) throw error;
+      if (!isRetryableGeminiError(error)) throw error;
     }
   }
   throw lastError || new Error("Gemini request failed");
+}
+
+function isRetryableGeminiError(error) {
+  const statusCode = Number(error && error.statusCode);
+  return statusCode === 404 || statusCode === 429 || statusCode === 500 || statusCode === 502 || statusCode === 503 || statusCode === 504;
+}
+
+function wait(ms) {
+  return new Promise(function (resolve) {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function getGeminiModelCandidates() {
@@ -408,6 +672,18 @@ async function postGeminiGenerateContent(model, body) {
     req.write(body);
     req.end();
   });
+}
+
+async function postGeminiGenerateContentWithRetry(model, body) {
+  try {
+    return await postGeminiGenerateContent(model, body);
+  } catch (error) {
+    if (!isRetryableGeminiError(error) || Number(error.statusCode) === 404) {
+      throw error;
+    }
+    await wait(650);
+    return postGeminiGenerateContent(model, body);
+  }
 }
 
 async function suggest(level, options, profile, context = {}) {
@@ -701,36 +977,82 @@ function normalizeGrowthUnitDeck(result, payload, lengthGuide) {
   });
 }
 
+function compactCompetencyRows(rows, count) {
+  return (rows || []).slice(0, count).map(function (row) {
+    return {
+      code: firstText(row.code, row.Code),
+      title: firstText(row.title, row.Title),
+      type: firstText(row.type, row.Type),
+      score: row.score,
+      job_count: row.job_count || row.jobCount || 0,
+      essential_hits: row.essential_hits || row.essentialHits || 0,
+      optional_hits: row.optional_hits || row.optionalHits || 0,
+      sources: (row.sources || []).slice(0, 4)
+    };
+  });
+}
+
+function shouldAttachCompetencyProfiles(level) {
+  return level === "job" || String(level || "").indexOf("occupation") === 0;
+}
+
+async function buildGrowthUnitCompetencyProfiles(payload) {
+  if (!shouldAttachCompetencyProfiles(payload.level)) return [];
+  const options = (payload.options || []).map(normalizeGraphOption).slice(0, 5);
+  const profiles = await Promise.all(options.map(async function (option) {
+    const identifier = firstText(option.uri, option.code);
+    if (!identifier) {
+      return {
+        option_code: option.code,
+        option_title: option.title,
+        error: "No uri or code available for competency profile lookup."
+      };
+    }
+    try {
+      const profile = await getWeightedCompetencyProfile(identifier, {
+        essentialWeight: DEFAULT_ESSENTIAL_WEIGHT,
+        optionalWeight: DEFAULT_OPTIONAL_WEIGHT,
+        limit: 30
+      });
+      return {
+        option_code: option.code,
+        option_title: option.title,
+        node_uri: profile.node && profile.node.uri,
+        downstream_job_count: (profile.jobs || []).length,
+        weights: profile.weights,
+        top_esco_competencies: compactCompetencyRows(profile.competencies, 12),
+        top_gh_competencies: compactCompetencyRows(profile.ghCompetencies || profile.gh_competencies, 12)
+      };
+    } catch (error) {
+      return {
+        option_code: option.code,
+        option_title: option.title,
+        error: error.message
+      };
+    }
+  }));
+  return profiles;
+}
+
 async function growthUnit(payload) {
   if (!payload.options || !payload.options.length) {
     throw serviceError("No current graph options are available. A Growth Unit card deck cannot be generated.", 422);
   }
   const lengthGuide = growthUnitLengthGuide(payload);
-  const shape = growthUnitDeckShape(Object.assign({}, payload, { lengthGuide }));
-  const prompt = `
-Return a reusable Growth Unit card deck as strict JSON using this exact top-level shape:
-${JSON.stringify(shape)}
-Create 2-3 clean, useful, enjoyable learning cards. Each card must educate the learner before the current graph decision is made.
-The cards are LMS content, not chat answers. They should be reusable for similar users and decisions, but personalized through profile_adaptation and examples.
-Length requirement:
-${JSON.stringify(lengthGuide)}
-Respect the requested LENGTH above. Do not produce short summaries when the requested length implies a longer lesson.
-Each card must meet or exceed minimum_words_per_card across the card fields. Use developed paragraphs, examples, and exercises.
-Keep each card focused: one clear concept, a substantial decision context, 2-3 explicit learning_outcomes, 1-2 practice_outcomes, and the requested number of micro_materials.
-For every micro_materials[] item, write 90-180 words of useful teaching content or exercise instructions, unless the requested length is shorter.
-Every learning_outcomes item must start with "The learner can ..." and describe observable understanding or decision skill.
-Teach the available choices as concepts and knowledge objects, but do not render them as selectable decision cards inside growth_units. Decision Options stay in the app's right sidebar.
-Adapt content length and tone to the user profile:
-- if burnout or blocked level is high, keep cards shorter, lower pressure, and focus on clarity;
-- if learning agility and weekly time are high, include deeper examples and a more detailed comparison task;
-- use the user's goals, competencies, values, and work history as examples.
-LMS concepts from docs/LMS Concepts.docx: Learning Goal gives direction; Dynamic Learning Path adapts to the individual; Learning/Growth Units are reusable educational units that support understanding, practice, reflection, and a next decision.
-The next action must tell the learner to choose one of the provided graph options in the app's right-side Decision Options panel. Do not recommend an external interview, portfolio task, or web search as the primary next action.
-Every option_decision_guidance item must correspond to one of the provided graph options, but keep this guidance explanatory. Do not make it a separate card list inside the growth unit.
-Payload: ${JSON.stringify({ ...payload, lengthGuide, profile: profileSignal(payload.profile) })}
-`;
-  const result = await askGemini(prompt, fallbackGrowthUnitDeck(payload, lengthGuide));
-  return normalizeGrowthUnitDeck(result, payload, lengthGuide);
+  const competencyProfiles = await buildGrowthUnitCompetencyProfiles(payload);
+  const enrichedPayload = Object.assign({}, payload, {
+    competencyProfiles,
+    weighted_competency_profiles: competencyProfiles
+  });
+  const shape = growthUnitDeckShape(Object.assign({}, enrichedPayload, { lengthGuide }));
+  const prompt = createGrowthUnitPrompt({
+    shape,
+    lengthGuide,
+    enrichedPayload,
+    profileSignal: profileSignal(payload.profile)
+  });
+  const result = await askGemini(prompt, fallbackGrowthUnitDeck(enrichedPayload, lengthGuide));
+  return normalizeGrowthUnitDeck(result, enrichedPayload, lengthGuide);
 }
 
 app.get("/api/status", async (_req, res) => {
@@ -776,6 +1098,14 @@ app.get("/api/neo4j/jobs", async (req, res, next) => {
 
 app.get("/api/neo4j/jobs/:jobCode/competencies", async (req, res, next) => {
   try { res.json({ items: await getCompetenciesForJob(req.params.jobCode) }); } catch (error) { next(error); }
+});
+
+app.post("/api/neo4j/competency-profile", async (req, res, next) => {
+  try {
+    const identifier = firstText(req.body.uri, req.body.code);
+    if (!identifier) throw serviceError("A node uri or code is required.", 400);
+    res.json(await getWeightedCompetencyProfile(identifier, req.body));
+  } catch (error) { next(error); }
 });
 
 app.get("/api/neo4j/nodes/:code/sectors", async (req, res, next) => {

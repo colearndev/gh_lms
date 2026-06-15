@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   AlertCircle,
+  BarChart3,
   Bot,
   Check,
   ChevronRight,
@@ -15,11 +16,11 @@ import {
   MessageSquare,
   RefreshCcw,
   Send,
-  Sparkles,
   Target,
   Upload,
   X
 } from "lucide-react";
+import GrowthUnitDeck from "./components/GrowthUnitDeck.jsx";
 import mockProfile from "../docs/user_profile_mock_1.json";
 import "./styles.css";
 
@@ -62,6 +63,15 @@ function valueOf(field, fallback = "Not provided") {
   if (field.label) return field.label;
   if (field.type) return field.type;
   return fallback;
+}
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return "";
 }
 
 function optionTitle(item, fallback = "Untitled option") {
@@ -256,7 +266,11 @@ function ExplorationStepper({ currentLevel }) {
   );
 }
 
-function SuggestionCards({ suggestions, onSelect, onFocus, focusedOptionKey, loading, level, canChoose }) {
+function canShowCompetencyProfile(level) {
+  return level === "job" || level.startsWith("occupation");
+}
+
+function SuggestionCards({ suggestions, onSelect, onFocus, onOpenCompetencies, focusedOptionKey, loading, level, canChoose }) {
   if (loading) return <LoadingState label="Building suggestions from profile and graph options" />;
   if (!suggestions.length) {
     return <div className="empty-state">No AI suggestions generated. Neo4j and Gemini must both be available.</div>;
@@ -276,7 +290,10 @@ function SuggestionCards({ suggestions, onSelect, onFocus, focusedOptionKey, loa
           <article
             className={`suggestion-card ${focused ? "focused" : ""}`}
             key={key}
-            onClick={() => onFocus(key)}
+            onClick={() => {
+              onFocus(key);
+              if (canShowCompetencyProfile(level)) onOpenCompetencies(item);
+            }}
           >
             <div className="card-heading">
               <div>
@@ -289,6 +306,15 @@ function SuggestionCards({ suggestions, onSelect, onFocus, focusedOptionKey, loa
             <div className="reason">{reason}</div>
             <div className="card-footer">
               <span className={`risk ${risk}`}>{risk} risk</span>
+              {canShowCompetencyProfile(level) ? (
+                <button type="button" onClick={(event) => {
+                  event.stopPropagation();
+                  onFocus(key);
+                  onOpenCompetencies(item);
+                }}>
+                  <BarChart3 size={16} /> Competencies
+                </button>
+              ) : null}
               <button type="button" onClick={(event) => {
                 event.stopPropagation();
                 onSelect(item);
@@ -303,111 +329,117 @@ function SuggestionCards({ suggestions, onSelect, onFocus, focusedOptionKey, loa
   );
 }
 
-function LearningOutcomeList({ items, fallback }) {
-  const normalized = (items || []).map((item) => {
-    if (typeof item === "string") return item;
-    return item.description || item.outcome || item.text || "";
-  }).filter(Boolean);
+function CompetencyProfileModal({ node, profile, loading, error, onClose }) {
+  const [activeTab, setActiveTab] = useState("chart");
+  const nodeTitle = optionTitle(node, "Selected node");
+  const escoRows = profile?.competencies || [];
+  const ghRows = profile?.ghCompetencies || profile?.gh_competencies || [];
+  const jobs = profile?.jobs || [];
+
   return (
-    <ul className="outcome-list">
-      {(normalized.length ? normalized : [fallback]).map((item) => (
-        <li key={item}>{item}</li>
-      ))}
-    </ul>
+    <div className="modal-backdrop">
+      <section className="panel competency-modal" role="dialog" aria-modal="true" aria-labelledby="competency-modal-title">
+        <div className="panel-title modal-title">
+          <div>
+            <BarChart3 size={18} />
+            <div>
+              <span className="brand-kicker">Weighted competency profile</span>
+              <h2 id="competency-modal-title">{nodeTitle}</h2>
+            </div>
+          </div>
+          <button type="button" className="ghost-button icon-button" onClick={onClose} aria-label="Close competency profile">
+            <X size={16} />
+          </button>
+        </div>
+
+        {loading ? <LoadingState label="Tracing downstream jobs and weighting competencies" /> : null}
+        {error ? <ErrorPanel message={error} /> : null}
+
+        {!loading && !error && profile ? (
+          <>
+            <div className="competency-metrics">
+              <Signal label="Downstream jobs" value={jobs.length} />
+              <Signal label="ESCO competencies" value={escoRows.length} />
+              <Signal label="GH competencies" value={ghRows.length} />
+            </div>
+            <div className="unit-tabs competency-tabs">
+              <button type="button" className={activeTab === "chart" ? "active" : ""} onClick={() => setActiveTab("chart")}>
+                Weighted view
+              </button>
+              <button type="button" className={activeTab === "data" ? "active" : ""} onClick={() => setActiveTab("data")}>
+                Data
+              </button>
+            </div>
+            {activeTab === "chart" ? (
+              <div className="competency-chart-grid">
+                <CompetencyRankedBars title="ESCO competencies" rows={escoRows} tone="esco" />
+                <CompetencyRankedBars title="GH competencies" rows={ghRows} tone="gh" />
+              </div>
+            ) : (
+              <div className="competency-table-grid">
+                <CompetencyDataTable title="ESCO" rows={escoRows} />
+                <CompetencyDataTable title="GH" rows={ghRows} />
+              </div>
+            )}
+          </>
+        ) : null}
+      </section>
+    </div>
   );
 }
 
-function GrowthUnitDeck({ deck, selectedUnitId, onSelectUnit, onGenerate, loading, disabled }) {
-  const units = deck?.growth_units || [];
-  const selectedUnit = units.find((unit) => unit.growth_unit_id === selectedUnitId) || units[0];
-  const concept = selectedUnit?.concept_focus || {};
-  if (!selectedUnit) {
-    return (
-      <section className="growth-unit growth-unit-empty">
-        <div className="growth-hero">
-          <div>
-            <span className="brand-kicker">Current LMS object</span>
-            <h2>Generate clear Growth Unit cards before deciding</h2>
-            <p>Each card teaches one decision concept, explains the knowledge needed for the available choices, and gives explicit learning outcomes before the learner picks from the Decision Options panel.</p>
-          </div>
-          <button type="button" className="primary-button growth-action" onClick={onGenerate} disabled={disabled || loading}>
-            {loading ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
-            Generate Card Deck
-          </button>
-        </div>
-      </section>
-    );
-  }
+function CompetencyRankedBars({ title, rows, tone }) {
+  const topRows = rows.slice(0, 20);
+  const maxScore = Math.max(1, ...topRows.map((row) => Number(row.score || 0)));
   return (
-    <section className="growth-unit">
-      <div className="growth-unit-header">
-        <div>
-          <span className="brand-kicker">Focused Growth Unit</span>
-          <h2>{selectedUnit.title}</h2>
-        </div>
-        <button type="button" className="ghost-button" onClick={onGenerate} disabled={disabled || loading}>
-          {loading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
-          Regenerate deck
-        </button>
-      </div>
-      <div className="unit-tabs">
-        {units.map((unit, index) => (
-          <button
-            type="button"
-            className={unit.growth_unit_id === selectedUnit.growth_unit_id ? "active" : ""}
-            onClick={() => onSelectUnit(unit.growth_unit_id)}
-            key={unit.growth_unit_id}
-          >
-            Card {index + 1}
-          </button>
-        ))}
-      </div>
-      <p className="growth-meaning">{selectedUnit.decision_context || selectedUnit.meaning}</p>
-      <div className="growth-meta">
-        <Metric label="Decision" value={selectedUnit.target_decision_level} />
-        <Metric label="Concept" value={concept.name || "Decision fit"} />
-        <Metric label="Length" value={`${selectedUnit.estimated_minutes || 4} min`} />
-        <Metric label="Card type" value={selectedUnit.card_type || "learning card"} />
-      </div>
-      <section className="learning-block concept-block">
-        <h3>Concept knowledge</h3>
-        <strong>{concept.name || selectedUnit.decision_question || "Decision fit"}</strong>
-        <p className="compact-item">{concept.definition || selectedUnit.decision_question || "Understand what matters in this decision before comparing the available options."}</p>
-      </section>
-      {selectedUnit.profile_adaptation ? (
-        <section className="learning-block">
-          <h3>Profile adaptation</h3>
-          <p className="compact-item">{selectedUnit.profile_adaptation}</p>
-        </section>
-      ) : null}
-      <section className="learning-block">
-        <h3>Learning outcomes</h3>
-        <LearningOutcomeList
-          items={selectedUnit.learning_outcomes}
-          fallback="The learner can explain the key concept behind this decision and use it to compare the Decision Options."
-        />
-      </section>
-      <section className="learning-block">
-        <h3>Decision skill outcomes</h3>
-        <LearningOutcomeList
-          items={selectedUnit.practice_outcomes}
-          fallback="The learner can choose one option from the right-side Decision Options panel and state why it fits their current goal."
-        />
-      </section>
-      <div className="mini-section">
-        <h3>Micro materials</h3>
-        <div className="materials-grid">
-          {(selectedUnit.micro_materials || []).map((item) => (
-            <div className="material" key={item.title}>
-              <span>{item.material_type}</span>
-              <strong>{item.title}</strong>
-              <p>{item.content}</p>
+    <section className="competency-panel">
+      <h3>{title}</h3>
+      {topRows.length ? topRows.map((row) => {
+        const label = optionTitle(row, "Untitled competency");
+        const score = Number(row.score || 0);
+        const width = `${Math.max(4, Math.round((score / maxScore) * 100))}%`;
+        return (
+          <article className="competency-bar-row" key={row.uri || row.Code || label}>
+            <div className="competency-bar-heading">
+              <strong>{label}</strong>
+              <span>{score}</span>
             </div>
-          ))}
+            <div className={`competency-bar ${tone}`}>
+              <span style={{ width }} />
+            </div>
+            <p>{firstNonEmpty(row.Type, row.type, "Competency")} · {row.essential_hits || row.essentialHits || 0} essential · {row.optional_hits || row.optionalHits || 0} optional · {row.job_count || row.jobCount || 0} jobs</p>
+          </article>
+        );
+      }) : <div className="empty-state small">No downstream competencies found.</div>}
+    </section>
+  );
+}
+
+function CompetencyDataTable({ title, rows }) {
+  return (
+    <section className="competency-panel">
+      <h3>{title}</h3>
+      {rows.length ? (
+        <div className="competency-table">
+          <div className="competency-table-head">
+            <span>Score</span>
+            <span>Competency</span>
+            <span>Hits</span>
+            <span>Sources</span>
+          </div>
+          {rows.slice(0, 100).map((row) => {
+            const label = optionTitle(row, "Untitled competency");
+            return (
+              <div className="competency-table-row" key={row.uri || row.Code || label}>
+                <strong>{row.score}</strong>
+                <span>{label}</span>
+                <span>{row.essential_hits || row.essentialHits || 0}E / {row.optional_hits || row.optionalHits || 0}O</span>
+                <span>{(row.sources || []).join(" | ") || "-"}</span>
+              </div>
+            );
+          })}
         </div>
-      </div>
-      <CompactList title="Reflection" items={selectedUnit.reflection_questions || []} />
-      <div className="next-action">{selectedUnit.recommended_next_action || "Use the Decision Options panel on the right to choose the next graph path."}</div>
+      ) : <div className="empty-state small">No downstream competencies found.</div>}
     </section>
   );
 }
@@ -988,6 +1020,10 @@ function App() {
   const [growthDeck, setGrowthDeck] = useState(null);
   const [selectedGrowthUnitId, setSelectedGrowthUnitId] = useState(null);
   const [profileInputOpen, setProfileInputOpen] = useState(false);
+  const [competencyNode, setCompetencyNode] = useState(null);
+  const [competencyProfile, setCompetencyProfile] = useState(null);
+  const [competencyLoading, setCompetencyLoading] = useState(false);
+  const [competencyError, setCompetencyError] = useState("");
   const [loading, setLoading] = useState(false);
   const [sideLoading, setSideLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1113,6 +1149,37 @@ function App() {
     }
   }
 
+  async function openCompetencyProfile(item) {
+    setCompetencyNode(item);
+    setCompetencyProfile(null);
+    setCompetencyError("");
+    setCompetencyLoading(true);
+    try {
+      const profile = await api("/api/neo4j/competency-profile", {
+        method: "POST",
+        body: JSON.stringify({
+          uri: item.uri,
+          code: item.code || item.Code,
+          limit: 100,
+          essentialWeight: 2,
+          optionalWeight: 1
+        })
+      });
+      setCompetencyProfile(profile);
+    } catch (err) {
+      setCompetencyError(err.message);
+    } finally {
+      setCompetencyLoading(false);
+    }
+  }
+
+  function closeCompetencyProfile() {
+    setCompetencyNode(null);
+    setCompetencyProfile(null);
+    setCompetencyError("");
+    setCompetencyLoading(false);
+  }
+
   function resetPath() {
     setHistory([]);
     setCurrentLevel("sector");
@@ -1156,7 +1223,7 @@ function App() {
             </div>
             <p className="side-note">Choose only after the Growth Unit has clarified the decision.</p>
           </section>
-          <SuggestionCards suggestions={suggestions} onSelect={choose} onFocus={setFocusedOptionKey} focusedOptionKey={focusedOptionKey} loading={loading} level={currentLevel} canChoose={Boolean(growthDeck)} />
+          <SuggestionCards suggestions={suggestions} onSelect={choose} onFocus={setFocusedOptionKey} onOpenCompetencies={openCompetencyProfile} focusedOptionKey={focusedOptionKey} loading={loading} level={currentLevel} canChoose={Boolean(growthDeck)} />
         </aside>
       </main>
       {profileInputOpen ? (
@@ -1166,6 +1233,15 @@ function App() {
           onApply={applyProfile}
           onClose={() => setProfileInputOpen(false)}
           parseError={parseError}
+        />
+      ) : null}
+      {competencyNode ? (
+        <CompetencyProfileModal
+          node={competencyProfile?.node || competencyNode}
+          profile={competencyProfile}
+          loading={competencyLoading}
+          error={competencyError}
+          onClose={closeCompetencyProfile}
         />
       ) : null}
     </AppShell>
