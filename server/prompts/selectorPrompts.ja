@@ -1,0 +1,331 @@
+{
+  "description": "Example inputs for SelectorPrompt and the sector/occupation/job suggestion endpoints.",
+  "apiPayloads": {
+    "suggestSectors": {
+      "endpoint": "POST /api/gemini/suggest-sectors",
+      "body": {
+        "context": {
+          "currentStep": "sector",
+          "selectedPath": [],
+          "decisionQuestion": "Which broad sector should the learner explore first?"
+        },
+        "profile": {
+          "personal": {
+            "personal_goals": {
+              "primary_goal": "Move into a stable, analytical technology-adjacent career."
+            },
+            "competency_map_pcpv": {
+              "competencies": [
+                "problem solving",
+                "written communication",
+                "customer empathy",
+                "basic data analysis"
+              ]
+            }
+          },
+          "professional": {
+            "cv": {
+              "work_experience": [
+                {
+                  "title": "Customer Support Specialist",
+                  "duration": "3 years",
+                  "description": "Solved technical customer issues, documented recurring problems, and coordinated with product teams."
+                }
+              ],
+              "education": [
+                {
+                  "title": "BA Business Administration"
+                }
+              ]
+            },
+            "work_values": [
+              "growth",
+              "clarity",
+              "autonomy"
+            ]
+          },
+          "self_awareness": {
+            "burnout_index_pcpv": {
+              "level": "medium"
+            },
+            "learning_agility_onboarding": {
+              "weekly_time_investment": 6
+            },
+            "personal_motivation_pcpv": {
+              "drivers": [
+                "mastery",
+                "career mobility"
+              ]
+            }
+          }
+        },
+        "options": [
+          {
+            "level": "sector",
+            "code": "J",
+            "title": "Information and Communication",
+            "description": "Economic activities related to software, data, telecommunications, media, and information services."
+          },
+          {
+            "level": "sector",
+            "code": "M",
+            "title": "Professional, Scientific and Technical Activities",
+            "description": "Knowledge-intensive advisory, technical, analytical, scientific, and professional services."
+          },
+          {
+            "level": "sector",
+            "code": "N",
+            "title": "Administrative and Support Service Activities",
+            "description": "Operational support, administration, coordination, customer service, and business support activities."
+          },
+          {
+            "level": "sector",
+            "code": "Q",
+            "title": "Human Health and Social Work Activities",
+            "description": "Care, support, health, wellbeing, and social assistance activities."
+          }
+        ]
+      }
+    },
+    "suggestOccupations": {
+      "endpoint": "POST /api/gemini/suggest-occupations",
+      "body": {
+        "level": "occupation_l2",
+        "context": {
+          "currentStep": "occupation_l2",
+          "selectedPath": [
+            {
+              "level": "sector",
+              "code": "J",
+              "title": "Information and Communication"
+            }
+          ],
+          "decisionQuestion": "Which occupation family best fits the learner's goals and current evidence?"
+        },
+        "profile": {
+          "personal": {
+            "personal_goals": {
+              "primary_goal": "Become a software-focused professional without losing the customer-facing strengths from prior work."
+            },
+            "competency_map_pcpv": {
+              "competencies": [
+                "problem solving",
+                "basic JavaScript",
+                "stakeholder communication",
+                "documentation"
+              ]
+            }
+          },
+          "professional": {
+            "cv": {
+              "work_experience": [
+                {
+                  "title": "Technical Support Analyst",
+                  "duration": "4 years",
+                  "description": "Investigated user issues, reproduced bugs, wrote support notes, and escalated product defects."
+                }
+              ]
+            },
+            "work_values": [
+              "learning",
+              "impact",
+              "structured problem solving"
+            ]
+          },
+          "self_awareness": {
+            "burnout_index_pcpv": {
+              "level": "low"
+            },
+            "learning_agility_onboarding": {
+              "weekly_time_investment": 8
+            }
+          }
+        },
+        "options": [
+          {
+            "level": "occupation_l2",
+            "code": "251",
+            "title": "Software and applications developers and analysts",
+            "uri": "http://data.europa.eu/esco/isco/C251",
+            "description": "Professionals who design, develop, test, analyze, and improve software applications and systems."
+          },
+          {
+            "level": "occupation_l2",
+            "code": "252",
+            "title": "Database and network professionals",
+            "uri": "http://data.europa.eu/esco/isco/C252",
+            "description": "Professionals who design, administer, secure, and maintain databases, networks, and information systems."
+          },
+          {
+            "level": "occupation_l2",
+            "code": "243",
+            "title": "Sales, marketing and public relations professionals",
+            "uri": "http://data.europa.eu/esco/isco/C243",
+            "description": "Professionals who research markets, communicate value, manage campaigns, and build customer relationships."
+          }
+        ]
+      }
+    },
+    "suggestJobs": {
+      "endpoint": "POST /api/gemini/suggest-jobs",
+      "body": {
+        "context": {
+          "currentStep": "job",
+          "selectedPath": [
+            {
+              "level": "sector",
+              "code": "J",
+              "title": "Information and Communication"
+            },
+            {
+              "level": "occupation_l2",
+              "code": "251",
+              "title": "Software and applications developers and analysts"
+            }
+          ],
+          "decisionQuestion": "Which concrete job target should the learner inspect next?"
+        },
+        "profile": {
+          "personal": {
+            "personal_goals": {
+              "primary_goal": "Find a realistic first software role that uses communication and problem-solving strengths."
+            },
+            "competency_map_pcpv": {
+              "competencies": [
+                "debugging basics",
+                "JavaScript fundamentals",
+                "technical documentation",
+                "customer issue analysis"
+              ]
+            }
+          },
+          "professional": {
+            "cv": {
+              "work_experience": [
+                {
+                  "title": "Technical Support Analyst",
+                  "duration": "4 years"
+                }
+              ]
+            },
+            "work_values": [
+              "mentorship",
+              "practical impact",
+              "career mobility"
+            ]
+          },
+          "self_awareness": {
+            "burnout_index_pcpv": {
+              "level": "medium"
+            },
+            "learning_agility_onboarding": {
+              "weekly_time_investment": 5
+            }
+          }
+        },
+        "options": [
+          {
+            "level": "job",
+            "code": "2512.1",
+            "title": "Application Developer",
+            "uri": "http://example.org/jobs/application-developer",
+            "description": "Builds, tests, maintains, and improves software applications for users or business teams."
+          },
+          {
+            "level": "job",
+            "code": "2519.2",
+            "title": "Software Tester",
+            "uri": "http://example.org/jobs/software-tester",
+            "description": "Plans and executes tests, reports defects, and helps improve software quality."
+          },
+          {
+            "level": "job",
+            "code": "2511.3",
+            "title": "Business Analyst",
+            "uri": "http://example.org/jobs/business-analyst",
+            "description": "Clarifies user needs, documents requirements, and helps teams translate problems into system changes."
+          }
+        ]
+      }
+    }
+  },
+  "directCreateSelectorPromptInputs": {
+    "occupationL2": {
+      "level": "occupation_l2",
+      "expectedCount": 3,
+      "profileSignal": {
+        "goals": {
+          "primary_goal": "Become a software-focused professional without losing customer-facing strengths."
+        },
+        "competencies": [
+          "problem solving",
+          "basic JavaScript",
+          "stakeholder communication",
+          "documentation"
+        ],
+        "workExperience": [
+          {
+            "title": "Technical Support Analyst",
+            "duration": "4 years"
+          }
+        ],
+        "education": [
+          {
+            "title": "BA Business Administration"
+          }
+        ],
+        "workValues": [
+          "learning",
+          "impact",
+          "structured problem solving"
+        ],
+        "motivation": {
+          "drivers": [
+            "mastery",
+            "career mobility"
+          ]
+        },
+        "burnout": {
+          "level": "low"
+        },
+        "learningAgility": {
+          "weekly_time_investment": 8
+        },
+        "careerAwareness": {}
+      },
+      "context": {
+        "currentStep": "occupation_l2",
+        "selectedPath": [
+          {
+            "level": "sector",
+            "code": "J",
+            "title": "Information and Communication"
+          }
+        ]
+      },
+      "options": [
+        {
+          "level": "occupation_l2",
+          "code": "251",
+          "title": "Software and applications developers and analysts",
+          "uri": "http://data.europa.eu/esco/isco/C251",
+          "description": "Professionals who design, develop, test, analyze, and improve software applications and systems."
+        },
+        {
+          "level": "occupation_l2",
+          "code": "252",
+          "title": "Database and network professionals",
+          "uri": "http://data.europa.eu/esco/isco/C252",
+          "description": "Professionals who design, administer, secure, and maintain databases, networks, and information systems."
+        },
+        {
+          "level": "occupation_l2",
+          "code": "243",
+          "title": "Sales, marketing and public relations professionals",
+          "uri": "http://data.europa.eu/esco/isco/C243",
+          "description": "Professionals who research markets, communicate value, manage campaigns, and build customer relationships."
+        }
+      ]
+    }
+  }
+}

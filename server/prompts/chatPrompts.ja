@@ -1,0 +1,213 @@
+{
+  "description": "Example inputs for ChatPrompt and POST /api/gemini/chat.",
+  "apiPayloads": {
+    "askAboutCurrentDecision": {
+      "endpoint": "POST /api/gemini/chat",
+      "body": {
+        "message": "I like software development, but I am worried it might be too technical. How should I think about this choice?",
+        "selectedPath": [
+          {
+            "level": "sector",
+            "code": "J",
+            "title": "Information and Communication"
+          },
+          {
+            "level": "occupation_l2",
+            "code": "251",
+            "title": "Software and applications developers and analysts"
+          }
+        ],
+        "currentOptions": [
+          {
+            "level": "job",
+            "code": "2512.1",
+            "title": "Application Developer",
+            "description": "Builds, tests, maintains, and improves software applications."
+          },
+          {
+            "level": "job",
+            "code": "2519.2",
+            "title": "Software Tester",
+            "description": "Plans and executes tests, reports defects, and improves software quality."
+          },
+          {
+            "level": "job",
+            "code": "2511.3",
+            "title": "Business Analyst",
+            "description": "Clarifies user needs and translates them into system requirements."
+          }
+        ],
+        "profile": {
+          "personal": {
+            "personal_goals": {
+              "primary_goal": "Find a realistic first software role that uses communication and problem-solving strengths."
+            },
+            "competency_map_pcpv": {
+              "competencies": [
+                "debugging basics",
+                "technical documentation",
+                "customer issue analysis",
+                "basic JavaScript"
+              ]
+            }
+          },
+          "professional": {
+            "cv": {
+              "work_experience": [
+                {
+                  "title": "Technical Support Analyst",
+                  "duration": "4 years"
+                }
+              ]
+            },
+            "work_values": [
+              "mentorship",
+              "practical impact",
+              "career mobility"
+            ]
+          },
+          "self_awareness": {
+            "burnout_index_pcpv": {
+              "level": "medium"
+            },
+            "learning_agility_onboarding": {
+              "weekly_time_investment": 5
+            }
+          }
+        },
+        "growthUnitSummary": {
+          "title": "Understand the job choice before narrowing the path",
+          "learning_outcomes": [
+            {
+              "description": "The learner can compare job options using capability fit, learning effort, and next-step clarity."
+            }
+          ]
+        }
+      }
+    },
+    "askForLowPressureExplanation": {
+      "endpoint": "POST /api/gemini/chat",
+      "body": {
+        "message": "Can you explain the difference between these options in a low-pressure way?",
+        "selectedPath": [
+          {
+            "level": "sector",
+            "code": "M",
+            "title": "Professional, Scientific and Technical Activities"
+          }
+        ],
+        "currentOptions": [
+          {
+            "level": "occupation_l2",
+            "code": "242",
+            "title": "Administration professionals",
+            "description": "Roles focused on coordination, planning, compliance, and administrative systems."
+          },
+          {
+            "level": "occupation_l2",
+            "code": "243",
+            "title": "Sales, marketing and public relations professionals",
+            "description": "Roles focused on customer insight, messaging, campaigns, and external relationships."
+          }
+        ],
+        "profile": {
+          "personal": {
+            "personal_goals": {
+              "primary_goal": "Find a more sustainable work direction after burnout."
+            },
+            "competency_map_pcpv": {
+              "competencies": [
+                "organization",
+                "writing",
+                "empathy",
+                "coordination"
+              ]
+            }
+          },
+          "professional": {
+            "cv": {
+              "work_experience": [
+                {
+                  "title": "Administrative Assistant",
+                  "duration": "5 years"
+                }
+              ]
+            },
+            "work_values": [
+              "stability",
+              "low conflict",
+              "helping others"
+            ]
+          },
+          "self_awareness": {
+            "burnout_index_pcpv": {
+              "level": "high"
+            },
+            "learning_agility_onboarding": {
+              "weekly_time_investment": 2
+            }
+          }
+        }
+      }
+    }
+  },
+  "directCreateChatPromptInputs": {
+    "currentDecisionQuestion": {
+      "message": "I like software development, but I am worried it might be too technical. How should I think about this choice?",
+      "selectedPath": [
+        {
+          "level": "sector",
+          "code": "J",
+          "title": "Information and Communication"
+        },
+        {
+          "level": "occupation_l2",
+          "code": "251",
+          "title": "Software and applications developers and analysts"
+        }
+      ],
+      "currentOptions": [
+        {
+          "level": "job",
+          "code": "2512.1",
+          "title": "Application Developer",
+          "description": "Builds, tests, maintains, and improves software applications."
+        },
+        {
+          "level": "job",
+          "code": "2519.2",
+          "title": "Software Tester",
+          "description": "Plans and executes tests, reports defects, and improves software quality."
+        }
+      ],
+      "profileSignal": {
+        "goals": {
+          "primary_goal": "Find a realistic first software role that uses communication and problem-solving strengths."
+        },
+        "competencies": [
+          "debugging basics",
+          "technical documentation",
+          "customer issue analysis",
+          "basic JavaScript"
+        ],
+        "workExperience": [
+          {
+            "title": "Technical Support Analyst",
+            "duration": "4 years"
+          }
+        ],
+        "workValues": [
+          "mentorship",
+          "practical impact",
+          "career mobility"
+        ],
+        "burnout": {
+          "level": "medium"
+        },
+        "learningAgility": {
+          "weekly_time_investment": 5
+        }
+      }
+    }
+  }
+}

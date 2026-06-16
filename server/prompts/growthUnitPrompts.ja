@@ -1,0 +1,278 @@
+{
+  "description": "Example inputs for GrowthUnitPrompt and POST /api/gemini/growth-unit.",
+  "apiPayloads": {
+    "occupationL2Medium": {
+      "level": "occupation_l2",
+      "LENGTH": "10 minutes",
+      "estimated_minutes": 10,
+      "selectedPath": [
+        {
+          "level": "sector",
+          "code": "J",
+          "title": "Information and Communication"
+        },
+        {
+          "level": "occupation_l1",
+          "code": "2",
+          "title": "Professionals"
+        }
+      ],
+      "options": [
+        {
+          "level": "occupation_l2",
+          "code": "251",
+          "title": "Software and applications developers and analysts",
+          "uri": "http://data.europa.eu/esco/isco/C251"
+        },
+        {
+          "level": "occupation_l2",
+          "code": "252",
+          "title": "Database and network professionals",
+          "uri": "http://data.europa.eu/esco/isco/C252"
+        },
+        {
+          "level": "occupation_l2",
+          "code": "243",
+          "title": "Sales, marketing and public relations professionals",
+          "uri": "http://data.europa.eu/esco/isco/C243"
+        }
+      ],
+      "profile": {
+        "personal": {
+          "personal_goals": {
+            "primary_goal": "Move into a more analytical technology role with room to grow."
+          },
+          "competency_map_pcpv": {
+            "competencies": [
+              "problem solving",
+              "structured communication",
+              "basic JavaScript",
+              "stakeholder management"
+            ]
+          }
+        },
+        "professional": {
+          "cv": {
+            "work_experience": [
+              {
+                "title": "Customer Support Specialist",
+                "duration": "3 years",
+                "description": "Handled technical customer issues, documented bugs, and coordinated with product teams."
+              }
+            ],
+            "education": [
+              {
+                "title": "BA Business Administration"
+              }
+            ]
+          },
+          "work_values": [
+            "growth",
+            "autonomy",
+            "clear problem solving"
+          ]
+        },
+        "self_awareness": {
+          "burnout_index_pcpv": {
+            "level": "medium"
+          },
+          "learning_agility_onboarding": {
+            "weekly_time_investment": 6
+          },
+          "personal_motivation_pcpv": {
+            "drivers": [
+              "mastery",
+              "career mobility"
+            ]
+          }
+        }
+      }
+    },
+    "sectorShortLowPressure": {
+      "level": "sector",
+      "LENGTH": "short",
+      "selectedPath": [],
+      "options": [
+        {
+          "level": "sector",
+          "code": "J",
+          "title": "Information and Communication"
+        },
+        {
+          "level": "sector",
+          "code": "M",
+          "title": "Professional, Scientific and Technical Activities"
+        },
+        {
+          "level": "sector",
+          "code": "Q",
+          "title": "Human Health and Social Work Activities"
+        }
+      ],
+      "profile": {
+        "personal": {
+          "personal_goals": {
+            "primary_goal": "Find a sustainable career direction after feeling stuck."
+          },
+          "competency_map_pcpv": {
+            "competencies": [
+              "empathy",
+              "organization",
+              "written communication"
+            ]
+          }
+        },
+        "professional": {
+          "cv": {
+            "work_experience": [
+              {
+                "title": "Administrative Assistant",
+                "duration": "5 years"
+              }
+            ]
+          },
+          "work_values": [
+            "stability",
+            "low conflict",
+            "helping others"
+          ]
+        },
+        "self_awareness": {
+          "burnout_index_pcpv": {
+            "level": "high"
+          },
+          "learning_agility_onboarding": {
+            "weekly_time_investment": 2
+          }
+        }
+      }
+    }
+  },
+  "directCreateGrowthUnitPromptInput": {
+    "shape": {
+      "deck_id": "string",
+      "target_decision_level": "occupation_l2",
+      "decision_context": "Current path: Information and Communication > Professionals",
+      "options_available": [
+        {
+          "level": "occupation_l2",
+          "code": "251",
+          "title": "Software and applications developers and analysts",
+          "uri": "http://data.europa.eu/esco/isco/C251"
+        }
+      ],
+      "length_guide": {
+        "requested_length": "10 minutes",
+        "target_minutes_per_card": 10,
+        "minimum_words_per_card": 900,
+        "micro_material_count": 4
+      },
+      "growth_units": []
+    },
+    "lengthGuide": {
+      "requested_length": "10 minutes",
+      "target_minutes_per_card": 10,
+      "minimum_words_per_card": 900,
+      "micro_material_count": 4,
+      "guidance": "Each Growth Unit card should read like a 10-minute LMS lesson, not a summary. Use at least 900 words per card across decision_context, concept_focus.definition, micro_materials, reflection_questions, and recommended_next_action."
+    },
+    "enrichedPayload": {
+      "level": "occupation_l2",
+      "LENGTH": "10 minutes",
+      "selectedPath": [
+        {
+          "level": "sector",
+          "code": "J",
+          "title": "Information and Communication"
+        }
+      ],
+      "options": [
+        {
+          "level": "occupation_l2",
+          "code": "251",
+          "title": "Software and applications developers and analysts",
+          "uri": "http://data.europa.eu/esco/isco/C251"
+        }
+      ],
+      "weighted_competency_profiles": [
+        {
+          "option_code": "251",
+          "option_title": "Software and applications developers and analysts",
+          "downstream_job_count": 18,
+          "weights": {
+            "essential": 2,
+            "optional": 1
+          },
+          "top_esco_competencies": [
+            {
+              "code": "S1",
+              "title": "develop software prototype",
+              "type": "Skill",
+              "score": 42,
+              "job_count": 12,
+              "essential_hits": 16,
+              "optional_hits": 10,
+              "sources": [
+                "software developer",
+                "application engineer"
+              ]
+            }
+          ],
+          "top_gh_competencies": [
+            {
+              "code": "gh_problem_solving",
+              "title": "Problem solving",
+              "type": "Skill",
+              "score": 50,
+              "job_count": 15,
+              "essential_hits": 20,
+              "optional_hits": 10,
+              "sources": [
+                "software developer"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "profileSignal": {
+      "goals": {
+        "primary_goal": "Move into a more analytical technology role."
+      },
+      "competencies": [
+        "problem solving",
+        "structured communication",
+        "basic JavaScript"
+      ],
+      "workExperience": [
+        {
+          "title": "Customer Support Specialist",
+          "duration": "3 years"
+        }
+      ],
+      "education": [
+        {
+          "title": "BA Business Administration"
+        }
+      ],
+      "workValues": [
+        "growth",
+        "autonomy",
+        "clear problem solving"
+      ],
+      "motivation": {
+        "drivers": [
+          "mastery",
+          "career mobility"
+        ]
+      },
+      "burnout": {
+        "level": "medium"
+      },
+      "learningAgility": {
+        "weekly_time_investment": 6
+      },
+      "careerAwareness": {}
+    }
+  }
+}
