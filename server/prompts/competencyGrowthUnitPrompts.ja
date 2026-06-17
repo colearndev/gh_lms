@@ -1,0 +1,149 @@
+{
+  "description": "Example inputs for CompetencyGrowthUnitPrompt and POST /api/gemini/competency-growth-unit.",
+  "apiPayloads": {
+    "knowledgeCompetencyForOccupation": {
+      "highlightedNode": {
+        "level": "occupation_l2",
+        "code": "251",
+        "title": "Software and applications developers and analysts",
+        "uri": "http://data.europa.eu/esco/isco/C251"
+      },
+      "selectedCompetency": {
+        "code": "K001",
+        "title": "software design methodologies",
+        "type": "Knowledge",
+        "description": "The body of knowledge related to approaches, principles, and methods used to design software systems.",
+        "score": 42,
+        "rank": 1,
+        "job_count": 12,
+        "essential_hits": 16,
+        "optional_hits": 10,
+        "sources": [
+          "software developer",
+          "application engineer",
+          "systems analyst"
+        ]
+      },
+      "user_competency_level_1_to_5": 2,
+      "LENGTH": "10 minutes",
+      "estimated_minutes": 10,
+      "profile": {
+        "personal": {
+          "personal_goals": {
+            "primary_goal": "Move into a more analytical technology role with room to grow."
+          },
+          "competency_map_pcpv": {
+            "competencies": [
+              "problem solving",
+              "structured communication",
+              "basic JavaScript",
+              "stakeholder management"
+            ]
+          }
+        },
+        "professional": {
+          "cv": {
+            "work_experience": [
+              {
+                "title": "Customer Support Specialist",
+                "duration": "3 years",
+                "description": "Handled technical customer issues, documented bugs, and coordinated with product teams."
+              }
+            ]
+          },
+          "work_values": [
+            "growth",
+            "autonomy",
+            "clear problem solving"
+          ]
+        },
+        "self_awareness": {
+          "burnout_index_pcpv": {
+            "level": "medium"
+          },
+          "learning_agility_onboarding": {
+            "weekly_time_investment": 6
+          }
+        }
+      }
+    }
+  },
+  "directCreateCompetencyGrowthUnitPromptInput": {
+    "shape": {
+      "deck_id": "string",
+      "deck_type": "competency_growth_unit",
+      "can_generate": true,
+      "generation_note": "Generated only for Knowledge type competencies.",
+      "highlighted_node": {
+        "level": "occupation_l2",
+        "code": "251",
+        "title": "Software and applications developers and analysts",
+        "uri": "http://data.europa.eu/esco/isco/C251"
+      },
+      "selected_competency": {
+        "code": "K001",
+        "title": "software design methodologies",
+        "type": "Knowledge",
+        "score": 42,
+        "rank": 1,
+        "job_count": 12,
+        "essential_hits": 16,
+        "optional_hits": 10,
+        "sources": [
+          "software developer",
+          "application engineer"
+        ]
+      },
+      "user_competency_level_1_to_5": 2,
+      "level_interpretation": "Learner is at basic level for this knowledge area.",
+      "length_guide": {
+        "requested_length": "10 minutes",
+        "target_minutes_per_card": 10,
+        "minimum_words_per_card": 900,
+        "micro_material_count": 4
+      },
+      "growth_units": []
+    },
+    "lengthGuide": {
+      "requested_length": "10 minutes",
+      "target_minutes_per_card": 10,
+      "minimum_words_per_card": 900,
+      "micro_material_count": 4,
+      "guidance": "Each Growth Unit card should read like a 10-minute LMS lesson, not a summary. Use at least 900 words per card across knowledge_context, competency_focus.definition, micro_materials, reflection_questions, and recommended_next_action."
+    },
+    "enrichedPayload": {
+      "highlightedNode": {
+        "level": "occupation_l2",
+        "code": "251",
+        "title": "Software and applications developers and analysts",
+        "uri": "http://data.europa.eu/esco/isco/C251"
+      },
+      "selectedCompetency": {
+        "code": "K001",
+        "title": "software design methodologies",
+        "type": "Knowledge",
+        "score": 42,
+        "job_count": 12,
+        "essential_hits": 16,
+        "optional_hits": 10,
+        "sources": [
+          "software developer",
+          "application engineer"
+        ]
+      },
+      "user_competency_level_1_to_5": 2
+    },
+    "profileSignal": {
+      "goals": {
+        "primary_goal": "Move into a more analytical technology role."
+      },
+      "competencies": [
+        "problem solving",
+        "basic JavaScript"
+      ],
+      "learningAgility": {
+        "weekly_time_investment": 6
+      }
+    }
+  }
+}

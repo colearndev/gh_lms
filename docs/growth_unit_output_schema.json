@@ -1,0 +1,69 @@
+{
+  "deck_id": "string",
+  "target_decision_level": "sector | occupation_l1 | occupation_l2 | job",
+  "decision_context": "string",
+  "options_available": [
+    {
+      "level": "string",
+      "code": "string",
+      "title": "string",
+      "uri": "string"
+    }
+  ],
+  "length_guide": {
+    "requested_length": "string",
+    "target_minutes_per_card": 8,
+    "minimum_words_per_card": 700,
+    "micro_material_count": 3,
+    "guidance": "string"
+  },
+  "growth_units": [
+    {
+      "growth_unit_id": "string",
+      "reusable_key": "string",
+      "title": "string",
+      "card_type": "decision_literacy | option_comparison | self_fit_reflection",
+      "estimated_minutes": 8,
+      "profile_adaptation": "string",
+      "target_decision_level": "string",
+      "user_state_snapshot": "string",
+      "decision_question": "string",
+      "decision_context": "string",
+      "concept_focus": {
+        "concept_id": "string",
+        "name": "string",
+        "definition": "string"
+      },
+      "learning_outcomes": [
+        {
+          "description": "The learner can ..."
+        }
+      ],
+      "practice_outcomes": [
+        {
+          "description": "The learner can ..."
+        }
+      ],
+      "micro_materials": [
+        {
+          "material_type": "concept_explanation | option_concept_note | reflection_question | mini_exercise",
+          "title": "string",
+          "content": "string",
+          "focus_concept": "string"
+        }
+      ],
+      "reflection_questions": [
+        "string"
+      ],
+      "option_decision_guidance": [
+        {
+          "option_code": "string",
+          "option_title": "string",
+          "when_to_choose": "string",
+          "caution": "string"
+        }
+      ],
+      "recommended_next_action": "string"
+    }
+  ]
+}

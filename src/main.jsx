@@ -16,6 +16,7 @@ import {
   MessageSquare,
   RefreshCcw,
   Send,
+  Sparkles,
   Target,
   Upload,
   X
@@ -329,7 +330,17 @@ function SuggestionCards({ suggestions, onSelect, onFocus, onOpenCompetencies, f
   );
 }
 
-function CompetencyProfileModal({ node, profile, loading, error, onClose }) {
+function CompetencyProfileModal({
+  node,
+  profile,
+  loading,
+  error,
+  competencyLevel,
+  onCompetencyLevel,
+  onGenerateGrowthUnit,
+  growthUnitLoading,
+  onClose
+}) {
   const [activeTab, setActiveTab] = useState("chart");
   const nodeTitle = optionTitle(node, "Selected node");
   const escoRows = profile?.competencies || [];
@@ -362,6 +373,16 @@ function CompetencyProfileModal({ node, profile, loading, error, onClose }) {
               <Signal label="ESCO competencies" value={escoRows.length} />
               <Signal label="GH competencies" value={ghRows.length} />
             </div>
+            <div className="competency-growth-controls">
+              <label htmlFor="competency-level">Current level</label>
+              <select id="competency-level" value={competencyLevel} onChange={(event) => onCompetencyLevel(Number(event.target.value))}>
+                <option value={1}>1 - novice</option>
+                <option value={2}>2 - basic</option>
+                <option value={3}>3 - working</option>
+                <option value={4}>4 - advanced</option>
+                <option value={5}>5 - expert</option>
+              </select>
+            </div>
             <div className="unit-tabs competency-tabs">
               <button type="button" className={activeTab === "chart" ? "active" : ""} onClick={() => setActiveTab("chart")}>
                 Weighted view
@@ -372,13 +393,13 @@ function CompetencyProfileModal({ node, profile, loading, error, onClose }) {
             </div>
             {activeTab === "chart" ? (
               <div className="competency-chart-grid">
-                <CompetencyRankedBars title="ESCO competencies" rows={escoRows} tone="esco" />
-                <CompetencyRankedBars title="GH competencies" rows={ghRows} tone="gh" />
+                <CompetencyRankedBars title="ESCO competencies" rows={escoRows} tone="esco" onGenerateGrowthUnit={onGenerateGrowthUnit} growthUnitLoading={growthUnitLoading} />
+                <CompetencyRankedBars title="GH competencies" rows={ghRows} tone="gh" onGenerateGrowthUnit={onGenerateGrowthUnit} growthUnitLoading={growthUnitLoading} />
               </div>
             ) : (
               <div className="competency-table-grid">
-                <CompetencyDataTable title="ESCO" rows={escoRows} />
-                <CompetencyDataTable title="GH" rows={ghRows} />
+                <CompetencyDataTable title="ESCO" rows={escoRows} onGenerateGrowthUnit={onGenerateGrowthUnit} growthUnitLoading={growthUnitLoading} />
+                <CompetencyDataTable title="GH" rows={ghRows} onGenerateGrowthUnit={onGenerateGrowthUnit} growthUnitLoading={growthUnitLoading} />
               </div>
             )}
           </>
@@ -388,7 +409,21 @@ function CompetencyProfileModal({ node, profile, loading, error, onClose }) {
   );
 }
 
-function CompetencyRankedBars({ title, rows, tone }) {
+function isKnowledgeRow(row) {
+  return /knowledge/i.test(firstNonEmpty(row?.type, row?.Type, row?.category, row?.Category));
+}
+
+function CompetencyGrowthButton({ row, onGenerateGrowthUnit, growthUnitLoading }) {
+  if (!isKnowledgeRow(row)) return null;
+  return (
+    <button type="button" className="ghost-button competency-growth-button" onClick={() => onGenerateGrowthUnit(row)} disabled={growthUnitLoading}>
+      {growthUnitLoading ? <Loader2 className="spin" size={14} /> : <Sparkles size={14} />}
+      Generate Growth Unit
+    </button>
+  );
+}
+
+function CompetencyRankedBars({ title, rows, tone, onGenerateGrowthUnit, growthUnitLoading }) {
   const topRows = rows.slice(0, 20);
   const maxScore = Math.max(1, ...topRows.map((row) => Number(row.score || 0)));
   return (
@@ -408,6 +443,7 @@ function CompetencyRankedBars({ title, rows, tone }) {
               <span style={{ width }} />
             </div>
             <p>{firstNonEmpty(row.Type, row.type, "Competency")} · {row.essential_hits || row.essentialHits || 0} essential · {row.optional_hits || row.optionalHits || 0} optional · {row.job_count || row.jobCount || 0} jobs</p>
+            <CompetencyGrowthButton row={row} onGenerateGrowthUnit={onGenerateGrowthUnit} growthUnitLoading={growthUnitLoading} />
           </article>
         );
       }) : <div className="empty-state small">No downstream competencies found.</div>}
@@ -415,7 +451,7 @@ function CompetencyRankedBars({ title, rows, tone }) {
   );
 }
 
-function CompetencyDataTable({ title, rows }) {
+function CompetencyDataTable({ title, rows, onGenerateGrowthUnit, growthUnitLoading }) {
   return (
     <section className="competency-panel">
       <h3>{title}</h3>
@@ -426,6 +462,7 @@ function CompetencyDataTable({ title, rows }) {
             <span>Competency</span>
             <span>Hits</span>
             <span>Sources</span>
+            <span>Growth</span>
           </div>
           {rows.slice(0, 100).map((row) => {
             const label = optionTitle(row, "Untitled competency");
@@ -435,6 +472,7 @@ function CompetencyDataTable({ title, rows }) {
                 <span>{label}</span>
                 <span>{row.essential_hits || row.essentialHits || 0}E / {row.optional_hits || row.optionalHits || 0}O</span>
                 <span>{(row.sources || []).join(" | ") || "-"}</span>
+                <span><CompetencyGrowthButton row={row} onGenerateGrowthUnit={onGenerateGrowthUnit} growthUnitLoading={growthUnitLoading} /></span>
               </div>
             );
           })}
@@ -1024,6 +1062,8 @@ function App() {
   const [competencyProfile, setCompetencyProfile] = useState(null);
   const [competencyLoading, setCompetencyLoading] = useState(false);
   const [competencyError, setCompetencyError] = useState("");
+  const [competencyLevel, setCompetencyLevel] = useState(1);
+  const [competencyGrowthLoading, setCompetencyGrowthLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sideLoading, setSideLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1153,6 +1193,8 @@ function App() {
     setCompetencyNode(item);
     setCompetencyProfile(null);
     setCompetencyError("");
+    setCompetencyLevel(1);
+    setCompetencyGrowthLoading(false);
     setCompetencyLoading(true);
     try {
       const profile = await api("/api/neo4j/competency-profile", {
@@ -1178,6 +1220,29 @@ function App() {
     setCompetencyProfile(null);
     setCompetencyError("");
     setCompetencyLoading(false);
+    setCompetencyGrowthLoading(false);
+  }
+
+  async function generateCompetencyGrowthUnit(competency) {
+    setCompetencyGrowthLoading(true);
+    try {
+      const deck = await api("/api/gemini/competency-growth-unit", {
+        method: "POST",
+        body: JSON.stringify({
+          highlightedNode: competencyProfile?.node || competencyNode,
+          selectedCompetency: competency,
+          user_competency_level_1_to_5: competencyLevel,
+          profile
+        })
+      });
+      setGrowthDeck(deck);
+      setSelectedGrowthUnitId(deck.growth_units?.[0]?.growth_unit_id || null);
+      closeCompetencyProfile();
+    } catch (err) {
+      setCompetencyError(err.message);
+    } finally {
+      setCompetencyGrowthLoading(false);
+    }
   }
 
   function resetPath() {
@@ -1241,6 +1306,10 @@ function App() {
           profile={competencyProfile}
           loading={competencyLoading}
           error={competencyError}
+          competencyLevel={competencyLevel}
+          onCompetencyLevel={setCompetencyLevel}
+          onGenerateGrowthUnit={generateCompetencyGrowthUnit}
+          growthUnitLoading={competencyGrowthLoading}
           onClose={closeCompetencyProfile}
         />
       ) : null}

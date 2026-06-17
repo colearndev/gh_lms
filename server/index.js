@@ -4,6 +4,7 @@ const https = require("https");
 const path = require("path");
 const neo4j = require("neo4j-driver");
 const { createGrowthUnitPrompt } = require("./prompts/growthUnitPrompt");
+const { createCompetencyGrowthUnitPrompt } = require("./prompts/competencyGrowthUnitPrompt");
 const { createChatGenerator } = require("./services/chatGeneration");
 const { createSelectorGenerator } = require("./services/selectorGeneration");
 
@@ -531,6 +532,13 @@ function growthUnitLengthGuide(payload) {
   };
 }
 
+function competencyGrowthUnitLengthGuide(payload) {
+  const guide = growthUnitLengthGuide(payload);
+  return Object.assign({}, guide, {
+    guidance: `Each competency Growth Unit card should read like a ${guide.target_minutes_per_card}-minute LMS lesson, not a summary. Use at least ${guide.minimum_words_per_card} words per card across knowledge_context, competency_focus.definition, current_level_fit, micro_materials, reflection_questions, and recommended_next_action.`
+  });
+}
+
 function extractJson(text, fallback) {
   try {
     return JSON.parse(text);
@@ -758,6 +766,124 @@ function growthUnitDeckShape({ level, options, selectedPath, lengthGuide }) {
   };
 }
 
+function normalizeCompetencyOption(competency) {
+  if (!competency) return {};
+  return Object.assign({}, competency, {
+    code: firstText(competency.code, competency.Code, competency.id, competency.ID, competency.uri),
+    uri: firstText(competency.uri, competency.URI),
+    title: firstText(competency.title, competency.Title, competency.name, competency.Name, competency.label, competency.Label, competency.code, competency.Code),
+    titleHu: firstText(competency.titleHu, competency.Title_HU, competency.TitleHu, competency.Title),
+    type: firstText(competency.type, competency.Type, competency.category, competency.Category),
+    description: firstText(competency.description, competency.Description, competency.descriptionHu, competency.Description_HU, ""),
+    score: Number(competency.score || 0),
+    rank: Number(competency.rank || competency.Rank || 0),
+    job_count: Number(competency.job_count || competency.jobCount || 0),
+    essential_hits: Number(competency.essential_hits || competency.essentialHits || 0),
+    optional_hits: Number(competency.optional_hits || competency.optionalHits || 0),
+    sources: Array.isArray(competency.sources) ? competency.sources.slice(0, 8) : []
+  });
+}
+
+function competencyLevelLabel(level) {
+  const labels = {
+    1: "novice",
+    2: "basic",
+    3: "working",
+    4: "advanced",
+    5: "expert"
+  };
+  return labels[level] || labels[1];
+}
+
+function normalizeCompetencyLevel(payload) {
+  const value = Number(
+    payload.user_competency_level_1_to_5 ||
+    payload.userCompetencyLevel ||
+    payload.competency_level ||
+    payload.competencyLevel ||
+    payload.level_1_to_5 ||
+    1
+  );
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(1, Math.min(5, Math.round(value)));
+}
+
+function isKnowledgeCompetency(competency) {
+  return /knowledge/i.test(firstText(competency.type, competency.Type, competency.category, competency.Category));
+}
+
+function booleanFromValue(value, fallback) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    if (/^(true|yes|1)$/i.test(value.trim())) return true;
+    if (/^(false|no|0)$/i.test(value.trim())) return false;
+  }
+  return Boolean(value);
+}
+
+function competencyGrowthUnitDeckShape({ highlightedNode, selectedCompetency, userCompetencyLevel, lengthGuide }) {
+  const node = normalizeGraphOption(highlightedNode);
+  const competency = normalizeCompetencyOption(selectedCompetency);
+  const guide = lengthGuide || {};
+  const levelLabel = competencyLevelLabel(userCompetencyLevel);
+  return {
+    deck_id: "string",
+    deck_type: "competency_growth_unit",
+    can_generate: true,
+    generation_note: "Generated only for Knowledge type competencies.",
+    highlighted_node: node,
+    selected_competency: competency,
+    user_competency_level_1_to_5: userCompetencyLevel,
+    level_interpretation: `Learner is at ${levelLabel} level for this knowledge area.`,
+    length_guide: guide,
+    growth_units: [
+      {
+        growth_unit_id: "string",
+        reusable_key: `${firstText(competency.code, "knowledge")}:competency-growth`,
+        title: `Build knowledge of ${competency.title || "the selected competency"}`,
+        card_type: "knowledge_concept | knowledge_application | knowledge_check",
+        estimated_minutes: guide.target_minutes_per_card || 8,
+        profile_adaptation: "Explain how the content was adapted to the learner profile and the 1-5 competency level.",
+        target_node_level: node.level || "occupation_or_job",
+        user_state_snapshot: "Short profile-relevant state snapshot.",
+        competency_question: "What should the learner understand about this knowledge competency?",
+        knowledge_context: "A substantial explanation of why this knowledge matters for the highlighted occupation/job.",
+        competency_focus: {
+          competency_id: competency.code || competency.uri || "knowledge-competency",
+          name: competency.title || "Selected knowledge competency",
+          type: "Knowledge",
+          definition: "A developed explanation of the selected knowledge competency.",
+          why_it_matters_for_node: "How this knowledge supports the highlighted occupation/job."
+        },
+        current_level_fit: {
+          level: userCompetencyLevel,
+          level_label: levelLabel,
+          what_the_learner_likely_knows: "string",
+          next_understanding_step: "string"
+        },
+        learning_outcomes: [
+          { description: "The learner can explain the knowledge concept in their own words." },
+          { description: "The learner can recognize where this knowledge appears in the highlighted occupation/job." }
+        ],
+        knowledge_practice_outcomes: [
+          { description: "The learner can use a short self-check to identify the next understanding gap." }
+        ],
+        micro_materials: [
+          {
+            material_type: "knowledge_explanation | worked_example | misconception_check | mini_exercise | self_check",
+            title: "string",
+            content: "Substantial teaching content, example, misconception check, or exercise instructions matched to the requested length.",
+            focus_concept: "string"
+          }
+        ],
+        reflection_questions: ["string"],
+        recommended_next_action: "Review the knowledge card, then return to the highlighted occupation/job competency list."
+      }
+    ]
+  };
+}
+
 function fallbackGrowthUnitDeck(payload, lengthGuide) {
   const normalizedOptions = (payload.options || []).map(normalizeGraphOption).slice(0, 5);
   const focus = normalizedOptions[0] || {};
@@ -875,6 +1001,135 @@ function normalizeGrowthUnitDeck(result, payload, lengthGuide) {
   });
 }
 
+function fallbackCompetencyGrowthUnitDeck(payload, lengthGuide) {
+  const node = normalizeGraphOption(payload.highlightedNode || payload.highlighted_node || payload.node);
+  const competency = normalizeCompetencyOption(payload.selectedCompetency || payload.selected_competency || payload.competency);
+  const userCompetencyLevel = normalizeCompetencyLevel(payload);
+  const levelLabel = competencyLevelLabel(userCompetencyLevel);
+  const canGenerate = isKnowledgeCompetency(competency);
+  const competencyTitle = competency.title || "the selected knowledge competency";
+  const nodeTitle = node.title || "the highlighted occupation/job";
+  const minutes = lengthGuide.target_minutes_per_card || 8;
+  return {
+    deck_id: `${firstText(node.code, "node")}:${firstText(competency.code, "competency")}:knowledge-growth-unit`,
+    deck_type: "competency_growth_unit",
+    can_generate: canGenerate,
+    generation_note: canGenerate
+      ? "Local fallback generated for a Knowledge type competency."
+      : "Competency Growth Units are generated only for Knowledge type competencies.",
+    highlighted_node: node,
+    selected_competency: competency,
+    user_competency_level_1_to_5: userCompetencyLevel,
+    level_interpretation: `Learner is at ${levelLabel} level for this knowledge area.`,
+    length_guide: lengthGuide,
+    generated_by: "local_fallback",
+    growth_units: canGenerate ? [
+      {
+        growth_unit_id: `${firstText(competency.code, "knowledge")}:concept-foundation`,
+        reusable_key: `${firstText(competency.code, "knowledge")}:competency-growth`,
+        title: `Understand ${competencyTitle}`,
+        card_type: "knowledge_concept",
+        estimated_minutes: minutes,
+        profile_adaptation: `This card is adapted for a learner at level ${userCompetencyLevel} (${levelLabel}) in this knowledge area. It keeps the explanation concrete, connects the knowledge to ${nodeTitle}, and avoids turning the content into a career-choice recommendation.`,
+        target_node_level: node.level || "occupation_or_job",
+        user_state_snapshot: `The learner is inspecting ${nodeTitle} and has highlighted ${competencyTitle} from the weighted competency profile.`,
+        competency_question: `What does the learner need to understand about ${competencyTitle} to see why it matters for ${nodeTitle}?`,
+        knowledge_context: `${competencyTitle} appears in the weighted competency profile for ${nodeTitle}. Its graph evidence suggests relevance across ${competency.job_count || 0} downstream jobs, with ${competency.essential_hits || 0} essential hits and ${competency.optional_hits || 0} optional hits. The purpose of this Growth Unit is not to decide whether the learner should choose the occupation or job. Its purpose is to build useful knowledge about the competency so the learner can interpret the role requirements with more confidence.`,
+        competency_focus: {
+          competency_id: competency.code || competency.uri || "knowledge-competency",
+          name: competencyTitle,
+          type: "Knowledge",
+          definition: competency.description || `${competencyTitle} is a knowledge area that helps the learner understand concepts, vocabulary, principles, and patterns used in ${nodeTitle}.`,
+          why_it_matters_for_node: `This knowledge helps the learner interpret tasks, requirements, and learning gaps connected to ${nodeTitle}.`
+        },
+        current_level_fit: {
+          level: userCompetencyLevel,
+          level_label: levelLabel,
+          what_the_learner_likely_knows: userCompetencyLevel <= 2
+            ? "The learner may recognize the term but still needs basic vocabulary, examples, and boundaries."
+            : "The learner likely has some usable understanding and needs clearer patterns, mistakes, and transfer examples.",
+          next_understanding_step: userCompetencyLevel >= 4
+            ? "Refine the concept into a teachable mental model and connect it to nuanced role situations."
+            : "Build a stable definition, recognize common examples, and identify one practical knowledge gap."
+        },
+        learning_outcomes: [
+          { description: `The learner can explain ${competencyTitle} in their own words.` },
+          { description: `The learner can describe why ${competencyTitle} matters for ${nodeTitle}.` },
+          { description: "The learner can identify one next knowledge gap to strengthen." }
+        ],
+        knowledge_practice_outcomes: [
+          { description: "The learner can complete a short self-check that separates familiar terms from concepts they can explain." }
+        ],
+        micro_materials: [
+          {
+            material_type: "knowledge_explanation",
+            title: "Build the core meaning",
+            content: `Start by defining ${competencyTitle} as a knowledge area, not as a task. Knowledge means the learner understands concepts, vocabulary, relationships, principles, and common situations. At level ${userCompetencyLevel}, the useful first move is to separate recognition from explanation. If the learner only recognizes the label, they should focus on plain-language meaning and examples. If they can already explain it, they should focus on where the concept becomes important in ${nodeTitle}.`,
+            focus_concept: competencyTitle
+          },
+          {
+            material_type: "worked_example",
+            title: "Connect it to the role context",
+            content: `In ${nodeTitle}, ${competencyTitle} matters because it helps the learner interpret what the work expects before they judge fit. The weighted profile points to this competency through sources such as ${(competency.sources || []).slice(0, 3).join(", ") || "downstream job requirements"}. Read that evidence as a relevance signal: the knowledge appears often enough that understanding it can make later learning and role comparison more precise.`,
+            focus_concept: "role relevance"
+          },
+          {
+            material_type: "self_check",
+            title: "Check current understanding",
+            content: `Write three short statements: one definition of ${competencyTitle}, one example of where it appears in ${nodeTitle}, and one question you still cannot answer. If the definition is vague, stay with basic vocabulary. If the example is missing, look for work situations connected to the highlighted role. If the question is specific, the learner is ready for a deeper card or the next competency.`,
+            focus_concept: "knowledge confidence"
+          }
+        ],
+        reflection_questions: [
+          `What part of ${competencyTitle} is already clear at level ${userCompetencyLevel}?`,
+          `Where would this knowledge show up inside ${nodeTitle}?`,
+          "What is the smallest knowledge gap to close next?"
+        ],
+        recommended_next_action: "Review the knowledge card, mark confidence for this competency, then return to the highlighted occupation/job competency list."
+      }
+    ] : []
+  };
+}
+
+function normalizeCompetencyGrowthUnitDeck(result, payload, lengthGuide) {
+  const fallback = fallbackCompetencyGrowthUnitDeck(payload, lengthGuide);
+  if (!result) return fallback;
+  const source = Array.isArray(result) ? { growth_units: result } : result;
+  const nestedDeck = source.deck || source.competency_growth_unit_deck || source.competencyGrowthUnitDeck || {};
+  const units = source.growth_units ||
+    source.growthUnits ||
+    source.units ||
+    source.cards ||
+    nestedDeck.growth_units ||
+    nestedDeck.growthUnits ||
+    nestedDeck.units ||
+    nestedDeck.cards;
+  const canGenerate = booleanFromValue(source.can_generate, fallback.can_generate);
+  return Object.assign({}, fallback, source, nestedDeck, {
+    deck_id: source.deck_id || nestedDeck.deck_id || fallback.deck_id,
+    deck_type: "competency_growth_unit",
+    can_generate: canGenerate,
+    generation_note: source.generation_note || nestedDeck.generation_note || fallback.generation_note,
+    highlighted_node: source.highlighted_node || nestedDeck.highlighted_node || fallback.highlighted_node,
+    selected_competency: source.selected_competency || nestedDeck.selected_competency || fallback.selected_competency,
+    user_competency_level_1_to_5: source.user_competency_level_1_to_5 || nestedDeck.user_competency_level_1_to_5 || fallback.user_competency_level_1_to_5,
+    length_guide: source.length_guide || nestedDeck.length_guide || lengthGuide,
+    growth_units: Array.isArray(units) && units.length ? units.map(function (unit, index) {
+      const fallbackUnit = fallback.growth_units[Math.min(index, Math.max(0, fallback.growth_units.length - 1))] || {};
+      return Object.assign({}, fallbackUnit, unit, {
+        growth_unit_id: unit.growth_unit_id || unit.id || `${fallback.deck_id}:${index + 1}`,
+        card_type: unit.card_type || fallbackUnit.card_type || "knowledge_concept",
+        estimated_minutes: unit.estimated_minutes || lengthGuide.target_minutes_per_card || fallbackUnit.estimated_minutes,
+        learning_outcomes: Array.isArray(unit.learning_outcomes) && unit.learning_outcomes.length ? unit.learning_outcomes : fallbackUnit.learning_outcomes,
+        knowledge_practice_outcomes: Array.isArray(unit.knowledge_practice_outcomes) && unit.knowledge_practice_outcomes.length ? unit.knowledge_practice_outcomes : fallbackUnit.knowledge_practice_outcomes,
+        micro_materials: Array.isArray(unit.micro_materials) && unit.micro_materials.length ? unit.micro_materials : fallbackUnit.micro_materials,
+        reflection_questions: Array.isArray(unit.reflection_questions) && unit.reflection_questions.length ? unit.reflection_questions : fallbackUnit.reflection_questions,
+        recommended_next_action: unit.recommended_next_action || fallbackUnit.recommended_next_action
+      });
+    }) : fallback.growth_units
+  });
+}
+
 function compactCompetencyRows(rows, count) {
   return (rows || []).slice(0, count).map(function (row) {
     return {
@@ -953,6 +1208,44 @@ async function growthUnit(payload) {
   return normalizeGrowthUnitDeck(result, enrichedPayload, lengthGuide);
 }
 
+async function competencyGrowthUnit(payload) {
+  const highlightedNode = payload.highlightedNode || payload.highlighted_node || payload.node;
+  const selectedCompetency = payload.selectedCompetency || payload.selected_competency || payload.competency;
+  if (!highlightedNode) {
+    throw serviceError("A highlighted occupation/job node is required for competency Growth Unit generation.", 400);
+  }
+  if (!selectedCompetency) {
+    throw serviceError("A selected Knowledge competency is required for competency Growth Unit generation.", 400);
+  }
+  const userCompetencyLevel = normalizeCompetencyLevel(payload);
+  const lengthGuide = competencyGrowthUnitLengthGuide(payload);
+  const enrichedPayload = Object.assign({}, payload, {
+    highlightedNode: normalizeGraphOption(highlightedNode),
+    highlighted_node: normalizeGraphOption(highlightedNode),
+    selectedCompetency: normalizeCompetencyOption(selectedCompetency),
+    selected_competency: normalizeCompetencyOption(selectedCompetency),
+    user_competency_level_1_to_5: userCompetencyLevel
+  });
+  const fallback = fallbackCompetencyGrowthUnitDeck(enrichedPayload, lengthGuide);
+  if (!isKnowledgeCompetency(enrichedPayload.selectedCompetency)) {
+    return fallback;
+  }
+  const shape = competencyGrowthUnitDeckShape({
+    highlightedNode: enrichedPayload.highlightedNode,
+    selectedCompetency: enrichedPayload.selectedCompetency,
+    userCompetencyLevel,
+    lengthGuide
+  });
+  const prompt = createCompetencyGrowthUnitPrompt({
+    shape,
+    lengthGuide,
+    enrichedPayload,
+    profileSignal: profileSignal(payload.profile)
+  });
+  const result = await askGemini(prompt, fallback);
+  return normalizeCompetencyGrowthUnitDeck(result, enrichedPayload, lengthGuide);
+}
+
 app.get("/api/status", async (_req, res) => {
   let neo4jConnected = false;
   let geminiAvailable = false;
@@ -1024,6 +1317,10 @@ app.post("/api/gemini/suggest-jobs", async (req, res, next) => {
 
 app.post("/api/gemini/growth-unit", async (req, res, next) => {
   try { res.json(await growthUnit(req.body)); } catch (error) { next(error); }
+});
+
+app.post("/api/gemini/competency-growth-unit", async (req, res, next) => {
+  try { res.json(await competencyGrowthUnit(req.body)); } catch (error) { next(error); }
 });
 
 app.post("/api/gemini/chat", async (req, res, next) => {

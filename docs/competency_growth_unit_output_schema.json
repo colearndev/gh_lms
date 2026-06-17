@@ -1,0 +1,85 @@
+{
+  "deck_id": "string",
+  "deck_type": "competency_growth_unit",
+  "can_generate": true,
+  "generation_note": "string",
+  "highlighted_node": {
+    "level": "occupation_l2 | occupation_l3 | occupation_l4 | job",
+    "code": "string",
+    "title": "string",
+    "uri": "string"
+  },
+  "selected_competency": {
+    "code": "string",
+    "title": "string",
+    "uri": "string",
+    "type": "Knowledge",
+    "description": "string",
+    "score": 0,
+    "rank": 1,
+    "job_count": 0,
+    "essential_hits": 0,
+    "optional_hits": 0,
+    "sources": [
+      "string"
+    ]
+  },
+  "user_competency_level_1_to_5": 1,
+  "level_interpretation": "string",
+  "length_guide": {
+    "requested_length": "string",
+    "target_minutes_per_card": 8,
+    "minimum_words_per_card": 700,
+    "micro_material_count": 3,
+    "guidance": "string"
+  },
+  "growth_units": [
+    {
+      "growth_unit_id": "string",
+      "reusable_key": "string",
+      "title": "string",
+      "card_type": "knowledge_concept | knowledge_application | knowledge_check",
+      "estimated_minutes": 8,
+      "profile_adaptation": "string",
+      "target_node_level": "occupation_l2 | occupation_l3 | occupation_l4 | job",
+      "user_state_snapshot": "string",
+      "competency_question": "string",
+      "knowledge_context": "string",
+      "competency_focus": {
+        "competency_id": "string",
+        "name": "string",
+        "type": "Knowledge",
+        "definition": "string",
+        "why_it_matters_for_node": "string"
+      },
+      "current_level_fit": {
+        "level": 1,
+        "level_label": "novice | basic | working | advanced | expert",
+        "what_the_learner_likely_knows": "string",
+        "next_understanding_step": "string"
+      },
+      "learning_outcomes": [
+        {
+          "description": "The learner can ..."
+        }
+      ],
+      "knowledge_practice_outcomes": [
+        {
+          "description": "The learner can ..."
+        }
+      ],
+      "micro_materials": [
+        {
+          "material_type": "knowledge_explanation | worked_example | misconception_check | mini_exercise | self_check",
+          "title": "string",
+          "content": "string",
+          "focus_concept": "string"
+        }
+      ],
+      "reflection_questions": [
+        "string"
+      ],
+      "recommended_next_action": "string"
+    }
+  ]
+}
