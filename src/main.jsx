@@ -272,12 +272,19 @@ function canShowCompetencyProfile(level) {
 }
 
 function SuggestionCards({ suggestions, onSelect, onFocus, onOpenCompetencies, focusedOptionKey, loading, level }) {
+  const [descriptionsOpen, setDescriptionsOpen] = useState(false);
   if (loading) return <LoadingState label="Building suggestions from profile and graph options" />;
   if (!suggestions.length) {
     return <div className="empty-state">No AI suggestions generated. Neo4j and Gemini must both be available.</div>;
   }
   return (
     <div className="suggestions">
+      <div className="suggestion-tools">
+        <button type="button" className="ghost-button" onClick={() => setDescriptionsOpen((value) => !value)}>
+          {descriptionsOpen ? <EyeOff size={15} /> : <Eye size={15} />}
+          {descriptionsOpen ? "Hide descriptions" : "Show descriptions"}
+        </button>
+      </div>
       {suggestions.map((item) => {
         const score = item.fitScore ?? item.score ?? item.fit_score ?? "-";
         const title = optionTitle(item);
@@ -303,7 +310,7 @@ function SuggestionCards({ suggestions, onSelect, onFocus, onOpenCompetencies, f
               </div>
               <span className="score">{score}</span>
             </div>
-            <p>{description}</p>
+            {descriptionsOpen ? <p className="option-description">{description}</p> : null}
             <div className="reason">{reason}</div>
             <div className="card-footer">
               <span className={`risk ${risk}`}>{risk} risk</span>
@@ -337,6 +344,8 @@ function CompetencyProfileModal({
   error,
   competencyLevel,
   onCompetencyLevel,
+  lessonLength,
+  onLessonLength,
   onGenerateGrowthUnit,
   growthUnitLoading,
   onClose
@@ -381,6 +390,14 @@ function CompetencyProfileModal({
                 <option value={3}>3 - working</option>
                 <option value={4}>4 - advanced</option>
                 <option value={5}>5 - expert</option>
+              </select>
+              <label htmlFor="competency-lesson-length">Lesson length</label>
+              <select id="competency-lesson-length" value={lessonLength} onChange={(event) => onLessonLength(event.target.value)}>
+                <option value="<2min">&lt;2min</option>
+                <option value="2-5min">2-5min</option>
+                <option value="5-10min">5-10min</option>
+                <option value="10-20min">10-20min</option>
+                <option value=">20min">&gt;20min</option>
               </select>
             </div>
             <div className="unit-tabs competency-tabs">
@@ -1057,6 +1074,7 @@ function App() {
   const [focusedOptionKey, setFocusedOptionKey] = useState("");
   const [growthDeck, setGrowthDeck] = useState(null);
   const [selectedGrowthUnitId, setSelectedGrowthUnitId] = useState(null);
+  const [lessonLength, setLessonLength] = useState("5-10min");
   const [profileInputOpen, setProfileInputOpen] = useState(false);
   const [competencyNode, setCompetencyNode] = useState(null);
   const [competencyProfile, setCompetencyProfile] = useState(null);
@@ -1161,7 +1179,7 @@ function App() {
     try {
       const deck = await api("/api/gemini/growth-unit", {
         method: "POST",
-        body: JSON.stringify({ level: currentLevel, profile, options: suggestions, selectedPath: history })
+        body: JSON.stringify({ level: currentLevel, profile, options: suggestions, selectedPath: history, LENGTH: lessonLength })
       });
       setGrowthDeck(deck);
       setSelectedGrowthUnitId(deck.growth_units?.[0]?.growth_unit_id || null);
@@ -1223,26 +1241,36 @@ function App() {
     setCompetencyGrowthLoading(false);
   }
 
-  async function generateCompetencyGrowthUnit(competency) {
+  async function generateCompetencyGrowthUnit(competency, highlightedNode) {
+    const node = highlightedNode || competencyProfile?.node || competencyNode;
     setCompetencyGrowthLoading(true);
     try {
       const deck = await api("/api/gemini/competency-growth-unit", {
         method: "POST",
         body: JSON.stringify({
-          highlightedNode: competencyProfile?.node || competencyNode,
+          highlightedNode: node,
           selectedCompetency: competency,
           user_competency_level_1_to_5: competencyLevel,
+          LENGTH: lessonLength,
           profile
         })
       });
       setGrowthDeck(deck);
       setSelectedGrowthUnitId(deck.growth_units?.[0]?.growth_unit_id || null);
-      closeCompetencyProfile();
+      if (competencyNode) closeCompetencyProfile();
     } catch (err) {
       setCompetencyError(err.message);
     } finally {
       setCompetencyGrowthLoading(false);
     }
+  }
+
+  async function regenerateGrowthUnit() {
+    if (growthDeck?.deck_type === "competency_growth_unit") {
+      await generateCompetencyGrowthUnit(growthDeck.selected_competency, growthDeck.highlighted_node);
+      return;
+    }
+    await generateGrowthUnit();
   }
 
   function resetPath() {
@@ -1278,7 +1306,16 @@ function App() {
             </button>
           </div>
           {error ? <ErrorPanel message={error} /> : null}
-          <GrowthUnitDeck deck={growthDeck} selectedUnitId={selectedGrowthUnitId} onSelectUnit={setSelectedGrowthUnitId} onGenerate={generateGrowthUnit} loading={sideLoading} disabled={!suggestions.length} />
+          <GrowthUnitDeck
+            deck={growthDeck}
+            selectedUnitId={selectedGrowthUnitId}
+            onSelectUnit={setSelectedGrowthUnitId}
+            onGenerate={regenerateGrowthUnit}
+            loading={sideLoading || competencyGrowthLoading}
+            disabled={growthDeck?.deck_type === "competency_growth_unit" ? false : !suggestions.length}
+            lessonLength={lessonLength}
+            onLessonLength={setLessonLength}
+          />
         </section>
         <aside className="right-column">
           <section className="panel">
@@ -1308,6 +1345,8 @@ function App() {
           error={competencyError}
           competencyLevel={competencyLevel}
           onCompetencyLevel={setCompetencyLevel}
+          lessonLength={lessonLength}
+          onLessonLength={setLessonLength}
           onGenerateGrowthUnit={generateCompetencyGrowthUnit}
           growthUnitLoading={competencyGrowthLoading}
           onClose={closeCompetencyProfile}

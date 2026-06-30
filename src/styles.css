@@ -395,6 +395,17 @@ h3 {
   gap: 8px;
 }
 
+.suggestion-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.suggestion-tools .ghost-button {
+  font-size: 0.78rem;
+  min-height: 32px;
+  padding: 0 10px;
+}
+
 .suggestion-card {
   background: #f8fbfb;
   border: 1px solid #d9e1e3;
@@ -445,6 +456,11 @@ h3 {
 .material p {
   color: #45585c;
   line-height: 1.45;
+}
+
+.option-description {
+  font-size: 0.86rem;
+  margin: 6px 0;
 }
 
 .reason {
@@ -510,6 +526,39 @@ h3 {
   flex: 0 0 auto;
   min-height: 46px;
   padding: 0 18px;
+}
+
+.growth-actions {
+  align-items: flex-end;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
+.growth-actions.compact {
+  align-items: center;
+}
+
+.lesson-length-control {
+  display: grid;
+  gap: 5px;
+  min-width: 132px;
+}
+
+.lesson-length-control span {
+  color: #657478;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.lesson-length-control select {
+  background: #ffffff;
+  border: 1px solid #cbd6d9;
+  border-radius: 8px;
+  color: #223033;
+  min-height: 38px;
+  padding: 0 10px;
 }
 
 .growth-meaning {
@@ -704,6 +753,76 @@ h3 {
   color: #33484c;
   line-height: 1.45;
   padding-left: 2px;
+}
+
+.lesson-section-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.lesson-section {
+  background: #ffffff;
+  border: 1px solid #d9e5e7;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.lesson-section > div {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.lesson-section span,
+.knowledge-check small {
+  color: #657478;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.lesson-section em {
+  color: #52666a;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.lesson-section h3 {
+  margin-bottom: 7px;
+}
+
+.lesson-section p,
+.knowledge-check p {
+  color: #33484c;
+  line-height: 1.58;
+}
+
+.knowledge-check-list {
+  display: grid;
+  gap: 10px;
+}
+
+.knowledge-check {
+  background: #ffffff;
+  border: 1px solid #d9e5e7;
+  border-radius: 8px;
+  padding: 11px;
+}
+
+.knowledge-check strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.knowledge-check small {
+  display: block;
+  line-height: 1.45;
+  margin-top: 7px;
+  text-transform: none;
 }
 
 .materials-grid {
@@ -1236,6 +1355,12 @@ h3 {
   .growth-hero,
   .growth-unit-header {
     flex-direction: column;
+  }
+
+  .growth-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
   }
 
   .status-strip {

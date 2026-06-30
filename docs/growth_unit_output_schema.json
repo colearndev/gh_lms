@@ -12,9 +12,11 @@
   ],
   "length_guide": {
     "requested_length": "string",
+    "length_bucket": "<2min | 2-5min | 5-10min | 10-20min | >20min",
     "target_minutes_per_card": 8,
     "minimum_words_per_card": 700,
     "micro_material_count": 3,
+    "available_length_buckets": ["<2min", "2-5min", "5-10min", "10-20min", ">20min"],
     "guidance": "string"
   },
   "growth_units": [
@@ -22,11 +24,18 @@
       "growth_unit_id": "string",
       "reusable_key": "string",
       "title": "string",
-      "card_type": "decision_literacy | option_comparison | self_fit_reflection",
+      "lesson_type": "full_lesson",
+      "card_type": "full_option_lesson | full_competency_lesson",
       "estimated_minutes": 8,
       "profile_adaptation": "string",
       "target_decision_level": "string",
       "user_state_snapshot": "string",
+      "option_focus": {
+        "option_code": "string",
+        "option_title": "string",
+        "option_level": "sector | occupation_l1 | occupation_l2 | occupation_l3 | occupation_l4 | job",
+        "option_uri": "string"
+      },
       "decision_question": "string",
       "decision_context": "string",
       "concept_focus": {
@@ -39,6 +48,14 @@
           "description": "The learner can ..."
         }
       ],
+      "lesson_sections": [
+        {
+          "section_type": "orientation | concept_teaching | competency_teaching | worked_example | guided_practice | self_assessment | summary",
+          "title": "string",
+          "content": "string",
+          "estimated_minutes": 1
+        }
+      ],
       "practice_outcomes": [
         {
           "description": "The learner can ..."
@@ -46,23 +63,24 @@
       ],
       "micro_materials": [
         {
-          "material_type": "concept_explanation | option_concept_note | reflection_question | mini_exercise",
+          "material_type": "concept_explanation | option_concept_note | competency_explanation | reflection_question | mini_exercise",
           "title": "string",
           "content": "string",
           "focus_concept": "string"
         }
       ],
+      "knowledge_checks": [
+        {
+          "question": "string",
+          "expected_answer": "string",
+          "feedback": "string"
+        }
+      ],
       "reflection_questions": [
         "string"
       ],
-      "option_decision_guidance": [
-        {
-          "option_code": "string",
-          "option_title": "string",
-          "when_to_choose": "string",
-          "caution": "string"
-        }
-      ],
+      "option_decision_guidance": [],
+      "lesson_completion_criteria": "string",
       "recommended_next_action": "string"
     }
   ]

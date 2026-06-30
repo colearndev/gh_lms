@@ -128,6 +128,14 @@ Example response when services are not available:
 }
 ```
 
+## Learning Material Storage
+
+Generated Growth Unit lessons are cached in Neo4j as `LearningMaterial` nodes. The cache key includes the graph target and the normalized lesson length bucket (`<2min`, `2-5min`, `5-10min`, `10-20min`, or `>20min`).
+
+- Option Growth Units connect from the sector, occupation, or job with `(:Sector|Occupation|Job)-[:HAS_LEARNING_MATERIAL]->(:LearningMaterial)`.
+- Competency Growth Units connect from the highlighted occupation/job with `[:HAS_CONTEXTUAL_LEARNING_MATERIAL]` and from the selected competency with `(:Competency|GH_Competency)-[:HAS_LEARNING_MATERIAL]->(:LearningMaterial)`.
+- When the same target and length bucket are requested again, the backend returns the stored material from Neo4j instead of calling Gemini.
+
 ## Build For Production
 
 To verify the frontend build:

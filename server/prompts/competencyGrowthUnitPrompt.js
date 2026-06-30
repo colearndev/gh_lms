@@ -1,17 +1,18 @@
 function createCompetencyGrowthUnitPrompt({ shape, lengthGuide, enrichedPayload, profileSignal }) {
   return `
-Return a reusable Competency Growth Unit card deck as strict JSON using this exact top-level shape:
+Return a reusable Competency Growth Unit lesson deck as strict JSON using this exact top-level shape:
 ${JSON.stringify(shape)}
 
-Create 2-3 clean, useful, enjoyable learning cards for the selected knowledge competency.
+Create one complete, useful, enjoyable LMS lesson for the selected knowledge competency.
 This generator is only for competencies whose type is Knowledge. If the selected competency is not Knowledge, return the same JSON shape with can_generate set to false, growth_units as an empty array, and a clear reason in generation_note.
 
-The cards are LMS knowledge content, not career decision cards and not chat answers. They should help the learner understand the selected competency well enough to continue toward the highlighted occupation/job.
+The lesson is LMS knowledge content, not a career decision card and not a chat answer. It should help the learner understand the selected competency well enough to continue toward the highlighted occupation/job.
 
 Length requirement:
 ${JSON.stringify(lengthGuide)}
 Respect the requested LENGTH above. Do not produce short summaries when the requested length implies a longer lesson.
-Each card must meet or exceed minimum_words_per_card across the card fields. Use developed paragraphs, examples, and exercises.
+Each lesson must meet or exceed minimum_words_per_card across the lesson fields. Use developed paragraphs, examples, and exercises.
+Populate lesson_sections[] as the main learning material. Include orientation, concept teaching, worked example or scenario, guided practice, self-assessment, and summary as appropriate for the length bucket.
 
 Use the learner's current competency level as the main adaptation signal:
 - level 1: introduce basic vocabulary, meaning, and simple examples;
@@ -20,10 +21,11 @@ Use the learner's current competency level as the main adaptation signal:
 - level 4: include deeper conceptual distinctions and transfer across contexts;
 - level 5: focus on expert mental models, teaching others, and nuanced application.
 
-Every growth_units[] item must be a knowledge learning card. Use card_type values from this set only: knowledge_concept, knowledge_application, knowledge_check.
+Every growth_units[] item must be a full competency lesson. Use card_type "full_competency_lesson" and lesson_type "full_lesson".
 Do not ask the learner to choose a graph option, do not rank occupations/jobs, and do not create decision guidance. The highlighted occupation/job and weighted competency evidence are context for relevance only.
 
-Keep each card focused: one clear knowledge concept, a substantial concept explanation, 2-3 explicit learning_outcomes, 1-2 knowledge_practice_outcomes, and the requested number of micro_materials.
+Keep the lesson focused: one clear knowledge concept, a substantial concept explanation, 2-3 explicit learning_outcomes, lesson_sections, knowledge_checks, lesson_completion_criteria, 1-2 knowledge_practice_outcomes, and the requested number of micro_materials.
+For every lesson_sections[] item, write substantial useful teaching content matched to the requested length.
 For every micro_materials[] item, write 90-180 words of useful teaching content or exercise instructions, unless the requested length is shorter.
 Every learning_outcomes item must start with "The learner can ..." and describe observable knowledge or understanding.
 

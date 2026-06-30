@@ -4,17 +4,17 @@
 
 This document describes the Growth Unit learning-material generator prompt used by the GapHopper LMS demo. It is intended for prompt writers or external contributors who need to improve the learning material generation without changing the app contract.
 
-The generator creates short LMS card decks that prepare a learner to make the next career-graph decision. It does not choose for the learner. It teaches the concepts, tradeoffs, competency evidence, and reflection needed before the learner selects one visible graph option.
+The generator creates complete LMS lesson decks that prepare a learner to make the next career-graph decision. It does not choose for the learner. It creates one full Growth Unit lesson for each visible graph option and teaches the concepts, competency evidence, practice, checks, and reflection needed before the learner selects one option.
 
 ## Material Goal
 
 Growth Unit materials should help the learner:
 
 - Understand what the current graph decision means.
-- Compare visible Decision Options using profile evidence and graph evidence.
-- Learn one reusable career-decision concept, not only read a recommendation.
-- Recognize relevant competencies behind occupation or job options.
-- Practice a small decision skill, such as justifying a choice or rejecting a poor-fit option.
+- Understand each visible Decision Option as its own sector, occupation, or job learning object.
+- Learn reusable explanatory material, not a comparison memo or recommendation ranking.
+- Recognize relevant top competencies behind occupation or job options.
+- Practice a small decision skill, such as making an evidence note for one option.
 - Return to the app ready to choose one option from the Decision Options panel.
 
 The tone should be clear, supportive, practical, and educational. The content should avoid diagnosis, pressure, and generic motivational fluff.
@@ -31,11 +31,11 @@ The adaptive path through the career graph. The learner narrows from broad optio
 
 **Decision Option**
 
-A selectable node shown in the right sidebar. Options may be sectors, occupations, or jobs. The Growth Unit must teach the learner how to compare these options, but it must not render them as separate selectable cards inside the learning material.
+A selectable node shown in the right sidebar. Options may be sectors, occupations, or jobs. The Growth Unit deck must include one full lesson per option, but it must not rank the options or render an in-lesson comparison table.
 
 **Growth Unit**
 
-A reusable educational unit that supports one graph decision. A Growth Unit is returned as a deck containing 2-3 learning cards. It includes explanation, practice, reflection, and a next action.
+A reusable educational unit that supports one graph decision. A Growth Unit is returned as a deck containing one complete LMS lesson per visible option. It includes explanation, lesson sections, practice, knowledge checks, reflection, completion criteria, and a next action.
 
 **Learning Unit**
 
@@ -43,11 +43,11 @@ A general LMS content object. In this implementation, a Growth Unit is a specifi
 
 **Learning Material**
 
-The teachable content inside a Growth Unit card: concept explanation, examples, micro-materials, exercises, reflection questions, and decision guidance.
+The teachable content inside a Growth Unit lesson: concept explanation, examples, micro-materials, exercises, knowledge checks, reflection questions, and completion criteria.
 
 **Micro Material**
 
-A small content block inside a Growth Unit card. It can be a concept explanation, option concept note, mini exercise, or reflection prompt. It should be substantial enough to teach, not just label.
+A small supplementary content block inside a Growth Unit lesson. The primary lesson body should live in `lesson_sections[]`; micro materials can add concept notes, mini exercises, or reflection prompts.
 
 **Learning Outcome**
 
@@ -65,7 +65,7 @@ A graph-derived evidence object for occupation/job options. It ranks ESCO and GH
 
 1. The frontend calls `POST /api/gemini/growth-unit`.
 2. The backend validates that current graph options exist.
-3. The backend computes a `lengthGuide` from requested length, profile signal, and learning agility.
+3. The backend computes a quantized `lengthGuide` from requested length, profile signal, and learning agility.
 4. If the current decision level is an occupation or job level, the backend pre-generates weighted competency profiles for up to 5 visible options.
 5. The backend builds an enriched prompt payload and passes it to `createGrowthUnitPrompt`.
 6. The backend normalizes the Gemini JSON into the app's expected deck shape.
@@ -78,7 +78,7 @@ Prompt and Growth Unit responsibilities are now split across dedicated files:
 - `server/prompts/growthUnitPrompt.js`: owns the Gemini prompt text through `createGrowthUnitPrompt`.
 - `server/index.js`: owns API routing, profile/option enrichment, weighted competency profile generation, Gemini calls, fallback decks, and output normalization.
 - `src/components/GrowthUnitDeck.jsx`: owns rendering of returned Growth Unit decks.
-- `src/main.jsx`: owns app state, Growth Unit generation requests, selected card state, and passing props into `GrowthUnitDeck`.
+- `src/main.jsx`: owns app state, Growth Unit generation requests, selected lesson state, lesson length, and passing props into `GrowthUnitDeck`.
 - `docs/growth_unit_prompt_dev_doc.md`: explains the prompt contract for maintainers and outsourced prompt writers.
 
 Prompt writers should usually edit only `server/prompts/growthUnitPrompt.js` and this document. They should avoid changing `server/index.js` unless the input/output contract itself changes.
@@ -93,7 +93,7 @@ The Growth Unit endpoint receives a payload like this:
   "profile": {},
   "options": [],
   "selectedPath": [],
-  "LENGTH": "medium"
+  "LENGTH": "5-10min"
 }
 ```
 
@@ -160,15 +160,17 @@ Example:
 
 ### `lengthGuide`
 
-Generated server-side. It tells Gemini how long each card should be.
+Generated server-side. It tells Gemini how long each lesson should be. The request is quantized to one of five buckets: `<2min`, `2-5min`, `5-10min`, `10-20min`, or `>20min`.
 
 ```json
 {
-  "requested_length": "10 minutes",
-  "target_minutes_per_card": 10,
-  "minimum_words_per_card": 900,
+  "requested_length": "10-20min",
+  "length_bucket": "10-20min",
+  "target_minutes_per_card": 15,
+  "minimum_words_per_card": 1200,
   "micro_material_count": 4,
-  "guidance": "Each Growth Unit card should read like..."
+  "available_length_buckets": ["<2min", "2-5min", "5-10min", "10-20min", ">20min"],
+  "guidance": "Each Growth Unit must be a complete LMS lesson..."
 }
 ```
 
@@ -237,46 +239,62 @@ Each item in `growth_units` must follow this shape:
 ```json
 {
   "growth_unit_id": "string",
-  "reusable_key": "occupation_l2:decision-literacy",
-  "title": "Understand the occupation decision",
-  "card_type": "decision_literacy",
+  "reusable_key": "occupation_l2:2512:growth-unit",
+  "title": "Understand Software developers",
+  "lesson_type": "full_lesson",
+  "card_type": "full_option_lesson",
   "estimated_minutes": 8,
   "profile_adaptation": "How content length, tone, and pressure level were adapted.",
   "target_decision_level": "occupation_l2",
   "user_state_snapshot": "Short profile-relevant state snapshot.",
-  "decision_question": "What should the learner understand before choosing?",
-  "decision_context": "Substantial explanation of why this decision matters.",
+  "option_focus": {
+    "option_code": "2512",
+    "option_title": "Software developers",
+    "option_level": "occupation_l2",
+    "option_uri": "http://data.europa.eu/esco/isco/C2512"
+  },
+  "decision_question": "What should the learner understand about this option before selecting it?",
+  "decision_context": "Substantial standalone explanation of this option.",
   "concept_focus": {
-    "concept_id": "career-search-narrowing",
-    "name": "Career search narrowing",
-    "definition": "Developed concept explanation."
+    "concept_id": "2512",
+    "name": "Software developers",
+    "definition": "Developed option explanation."
   },
   "learning_outcomes": [
     { "description": "The learner can ..." }
+  ],
+  "lesson_sections": [
+    {
+      "section_type": "orientation",
+      "title": "Lesson orientation",
+      "content": "Complete teaching content.",
+      "estimated_minutes": 1
+    }
   ],
   "practice_outcomes": [
     { "description": "The learner can ..." }
   ],
   "micro_materials": [
     {
-      "material_type": "concept_explanation",
-      "title": "Read options as concepts",
+      "material_type": "competency_explanation",
+      "title": "Top competency signals",
       "content": "Substantial teaching content or exercise instructions.",
-      "focus_concept": "career-search-narrowing"
+      "focus_concept": "weighted competencies"
     }
   ],
   "reflection_questions": [
-    "Which option would make the next step clearer?"
+    "What evidence would make selecting this option justified?"
   ],
-  "option_decision_guidance": [
+  "knowledge_checks": [
     {
-      "option_code": "2512",
-      "option_title": "Software developers",
-      "when_to_choose": "Choose this when...",
-      "caution": "Do not choose it only because..."
+      "question": "What does this option mean?",
+      "expected_answer": "A clear answer...",
+      "feedback": "If the answer is vague..."
     }
   ],
-  "recommended_next_action": "Review the card, then choose one option from the right-side Decision Options panel."
+  "option_decision_guidance": [],
+  "lesson_completion_criteria": "The learner can explain the option, complete the checks, and decide whether selection is justified.",
+  "recommended_next_action": "Review this option's Growth Unit, then select it from the right-side Decision Options panel only if it fits."
 }
 ```
 
@@ -296,16 +314,17 @@ createGrowthUnitPrompt({
 The prompt currently instructs Gemini to:
 
 - Return strict JSON only.
-- Create 2-3 Growth Unit cards.
-- Make each card educational before the graph decision is made.
-- Keep cards reusable, but adapt examples and tone to the profile.
+- Create exactly one complete Growth Unit lesson per visible option.
+- Make each lesson educational about one sector, occupation, or job before the graph decision is made.
+- Keep lessons reusable, but adapt examples and tone to the profile.
 - Respect `lengthGuide`.
 - Write developed paragraphs, examples, and exercises.
-- Include 2-3 learning outcomes and 1-2 practice outcomes per card.
+- Include 2-3 learning outcomes, lesson sections, knowledge checks, completion criteria, and 1-2 practice outcomes per lesson.
 - Start every learning outcome with "The learner can ...".
-- Use weighted competency profiles as graph evidence for occupation/job options.
-- Keep Decision Options in the app sidebar, not inside the Growth Unit as selectable cards.
-- Tell the learner to choose from the app's Decision Options panel as the next action.
+- Use weighted competency profiles as explanatory material for occupation/job options.
+- Avoid comparison-style lessons, rankings, pros/cons matrices, and winner/loser language.
+- Keep Decision Options in the app sidebar as the place where selection happens.
+- Tell the learner to choose this lesson's option from the app's Decision Options panel only if it fits.
 
 ## Rendering In The App
 
@@ -333,11 +352,13 @@ Rendered deck elements:
 - Profile adaptation block: `profile_adaptation`, when present.
 - Learning outcomes: `learning_outcomes[]`.
 - Decision skill outcomes: `practice_outcomes[]`.
-- Micro materials: `micro_materials[]`, each rendered as a small material block.
+- Lesson sections: `lesson_sections[]`, each rendered as the main learning material.
+- Knowledge checks: `knowledge_checks[]`, each rendered with question, expected answer, and feedback.
+- Micro materials: `micro_materials[]`, each rendered as a supplementary material block.
 - Reflection: `reflection_questions[]`.
 - Final next action: `recommended_next_action`.
 
-Currently, `option_decision_guidance` is included in the output contract for downstream use and prompt grounding, but it is not rendered as a separate visible list in the Growth Unit deck.
+`option_decision_guidance` is retained for compatibility, but the generator should usually return an empty array. It is not rendered as a separate visible list in the Growth Unit deck.
 
 ## Normalization And Fallback Behavior
 
@@ -352,14 +373,14 @@ If Gemini returns:
 
 the backend attempts to map it back to the expected deck shape.
 
-If Gemini fails or returns invalid content, the backend can use a local fallback deck from `fallbackGrowthUnitDeck` in `server/index.js`. The fallback teaches career search narrowing and keeps the learner moving.
+If Gemini fails or returns invalid content, the backend can use a local fallback deck from `fallbackGrowthUnitDeck` in `server/index.js`. The fallback generates one full lesson per option and includes top competency signals when weighted profiles are available.
 
 ## Editing Boundaries
 
 When changing the prompt:
 
 - Keep the top-level JSON contract stable unless the frontend renderer is updated too.
-- Keep `growth_units[]` as the main card list.
+- Keep `growth_units[]` as the main lesson list.
 - Keep `learning_outcomes[]`, `practice_outcomes[]`, and `micro_materials[]` as arrays.
 - Keep `recommended_next_action` focused on returning to the in-app Decision Options panel.
 - Keep `weighted_competency_profiles` in the prompt payload for occupation/job levels.
@@ -376,12 +397,12 @@ A good generated deck should feel like a short lesson, not a recommendation memo
 
 Strong content:
 
-- Teaches one decision concept clearly.
+- Teaches one option clearly.
 - Uses concrete evidence from visible options.
 - Explains competency patterns when the option is an occupation/job.
 - Connects to the learner profile without over-personalizing or diagnosing.
 - Gives a small practice action.
-- Ends by sending the learner back to choose one visible option.
+- Ends by sending the learner back to choose that visible option only if it fits.
 
 Weak content:
 
@@ -390,4 +411,4 @@ Weak content:
 - Recommends external actions as the primary next step.
 - Ignores `weighted_competency_profiles` for occupation/job decisions.
 - Produces motivational text without observable learning outcomes.
-- Creates selectable cards inside the Growth Unit instead of leaving selection to the app sidebar.
+- Creates comparison-style lessons, option rankings, or pros/cons tables.

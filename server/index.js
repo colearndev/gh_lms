@@ -123,6 +123,46 @@ async function readQuery(query, params) {
   }
 }
 
+async function writeQuery(query, params) {
+  requireNeo4j();
+  params = params || {};
+  const session = driver.session({ defaultAccessMode: neo4j.session.WRITE });
+  try {
+    const result = await session.writeTransaction(function (tx) {
+      return tx.run(query, params);
+    });
+    return result.records.map(toPlain);
+  } finally {
+    await session.close();
+  }
+}
+
+function graphNodeKey(item, fallback) {
+  return firstText(item && item.uri, item && item.URI, item && item.code, item && item.Code, item && item.id, item && item.title, fallback);
+}
+
+function learningMaterialCacheKey(parts) {
+  return parts.map(function (part) {
+    return String(part || "unknown").trim().toLowerCase().replace(/\s+/g, "_");
+  }).join(":");
+}
+
+function parseJsonProperty(value, fallback) {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function cacheGeneratedBy(deck, source) {
+  return Object.assign({}, deck, {
+    generated_by: source,
+    cache_status: source
+  });
+}
+
 async function getSectors() {
   const rows = await readQuery(`
     MATCH (s:Sector)
@@ -514,28 +554,44 @@ function growthUnitLengthGuide(payload) {
   const signal = profileSignal(payload.profile);
   const weeklyTime = Number(signal.learningAgility.weekly_time_investment || 0);
   let minutes = Number(payload.estimated_minutes || payload.estimatedMinutes || 0);
+  const explicitMinutes = Number((String(explicitLength || "").match(/\d+(?:\.\d+)?/) || [])[0] || 0);
   if (!minutes) {
-    if (/short|rövid/i.test(explicitLength)) minutes = 5;
-    else if (/long|hossz/i.test(explicitLength)) minutes = 15;
-    else if (/medium|közep/i.test(explicitLength)) minutes = 10;
+    if (/<\s*2|under\s*2|less than\s*2/i.test(explicitLength)) minutes = 1;
+    else if (/2\s*-\s*5|2\s*to\s*5/i.test(explicitLength)) minutes = 4;
+    else if (/5\s*-\s*10|5\s*to\s*10|medium|közep/i.test(explicitLength)) minutes = 8;
+    else if (/10\s*-\s*20|10\s*to\s*20|long|hossz/i.test(explicitLength)) minutes = 15;
+    else if (/>+\s*20|over\s*20|more than\s*20/i.test(explicitLength)) minutes = 25;
+    else if (/short|rövid/i.test(explicitLength)) minutes = 4;
+    else if (explicitMinutes) minutes = explicitMinutes;
     else if (weeklyTime >= 8) minutes = 12;
     else if (weeklyTime >= 4) minutes = 8;
     else minutes = 5;
   }
-  const wordsPerCard = Math.max(350, minutes * 90);
+  const buckets = [
+    { label: "<2min", min: 0, max: 2, target: 1, words: 150, materials: 1 },
+    { label: "2-5min", min: 2, max: 5, target: 4, words: 350, materials: 2 },
+    { label: "5-10min", min: 5, max: 10, target: 8, words: 700, materials: 3 },
+    { label: "10-20min", min: 10, max: 20, target: 15, words: 1200, materials: 4 },
+    { label: ">20min", min: 20, max: Infinity, target: 25, words: 1800, materials: 5 }
+  ];
+  const bucket = buckets.find(function (item) {
+    return minutes < item.max;
+  }) || buckets[buckets.length - 1];
   return {
-    requested_length: explicitLength || `${minutes} minutes`,
-    target_minutes_per_card: minutes,
-    minimum_words_per_card: wordsPerCard,
-    micro_material_count: minutes >= 10 ? 4 : 3,
-    guidance: `Each Growth Unit card should read like a ${minutes}-minute LMS lesson, not a summary. Use at least ${wordsPerCard} words per card across decision_context, concept_focus.definition, micro_materials, reflection_questions, and recommended_next_action.`
+    requested_length: explicitLength || bucket.label,
+    length_bucket: bucket.label,
+    target_minutes_per_card: bucket.target,
+    minimum_words_per_card: bucket.words,
+    micro_material_count: bucket.materials,
+    available_length_buckets: buckets.map(function (item) { return item.label; }),
+    guidance: `Quantize the requested length to ${bucket.label}. Each Growth Unit must be a complete ${bucket.target}-minute LMS lesson, not a card summary. Use at least ${bucket.words} words per lesson across decision_context, concept_focus.definition, lesson_sections, micro_materials, knowledge_checks, reflection_questions, and recommended_next_action.`
   };
 }
 
 function competencyGrowthUnitLengthGuide(payload) {
   const guide = growthUnitLengthGuide(payload);
   return Object.assign({}, guide, {
-    guidance: `Each competency Growth Unit card should read like a ${guide.target_minutes_per_card}-minute LMS lesson, not a summary. Use at least ${guide.minimum_words_per_card} words per card across knowledge_context, competency_focus.definition, current_level_fit, micro_materials, reflection_questions, and recommended_next_action.`
+    guidance: `Each competency Growth Unit must be a complete ${guide.target_minutes_per_card}-minute LMS lesson, not a card summary. Use at least ${guide.minimum_words_per_card} words per lesson across knowledge_context, competency_focus.definition, current_level_fit, lesson_sections, micro_materials, knowledge_checks, reflection_questions, and recommended_next_action.`
   });
 }
 
@@ -559,7 +615,7 @@ async function askGemini(prompt, fallback) {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
       responseMimeType: "application/json",
-      maxOutputTokens: 8192,
+      maxOutputTokens: 24576,
       temperature: 0.45
     }
   });
@@ -711,7 +767,6 @@ async function postGeminiGenerateContentWithRetry(model, body) {
 
 function growthUnitDeckShape({ level, options, selectedPath, lengthGuide }) {
   const normalizedOptions = (options || []).map(normalizeGraphOption).slice(0, 5);
-  const focus = normalizedOptions[0] || {};
   const guide = lengthGuide || {};
   return {
     deck_id: "string",
@@ -719,50 +774,66 @@ function growthUnitDeckShape({ level, options, selectedPath, lengthGuide }) {
     decision_context: `Current path: ${selectedPath && selectedPath.length ? selectedPath.map((item) => item.title).join(" > ") : "not selected yet"}`,
     options_available: normalizedOptions,
     length_guide: guide,
-    growth_units: [
-      {
-        growth_unit_id: "string",
-        reusable_key: `${level}:decision-literacy`,
-        title: `Understand the ${level} decision`,
-        card_type: "decision_literacy | option_comparison | self_fit_reflection",
+    growth_units: normalizedOptions.map(function (option) {
+      return {
+        growth_unit_id: `${level}:${option.code || option.uri || option.title || "option"}:explanation`,
+        reusable_key: `${level}:${option.code || option.uri || option.title || "option"}:growth-unit`,
+        title: `Full lesson: ${option.title || "this option"}`,
+        lesson_type: "full_lesson",
+        card_type: "full_option_lesson | full_competency_lesson",
         estimated_minutes: guide.target_minutes_per_card || 8,
-        profile_adaptation: "Explain how the card length, tone, and pressure level were adapted to the profile.",
+        profile_adaptation: "Explain how the lesson length, tone, and pressure level were adapted to the profile.",
         target_decision_level: level,
         user_state_snapshot: "Short profile-relevant state snapshot.",
-        decision_question: "What should the learner understand before choosing the next graph node?",
-        decision_context: "A substantial explanation of why this decision matters now and what knowledge is needed before choosing.",
+        option_focus: {
+          option_code: option.code || option.uri || "option",
+          option_title: option.title || "Selected option",
+          option_level: option.level || level,
+          option_uri: option.uri || ""
+        },
+        decision_question: `What should the learner understand about ${option.title || "this option"} before selecting it?`,
+        decision_context: "A substantial standalone explanation of this option as a learning object. Do not compare it against other options.",
         concept_focus: {
-          concept_id: focus.code || "decision-fit",
-          name: focus.title || "Decision fit",
-          definition: "A developed concept explanation the learner needs before deciding, including how the available options should be understood as learning concepts."
+          concept_id: option.code || option.uri || "option-understanding",
+          name: option.title || "Selected option",
+          definition: "A developed explanation of what this sector, occupation, or job means, including typical work, learning demands, and fit signals."
         },
         learning_outcomes: [
-          { description: "The learner can explain the decision concept in their own words." },
-          { description: "The learner can identify which option attributes matter for their personal goal." }
+          { description: "The learner can explain this option in their own words." },
+          { description: "The learner can identify the competencies, work patterns, or learning demands that matter for this option." }
+        ],
+        lesson_sections: [
+          {
+            section_type: "orientation | concept_teaching | competency_teaching | worked_example | guided_practice | self_assessment | summary",
+            title: "string",
+            content: "Complete lesson section content matched to the requested length bucket.",
+            estimated_minutes: 1
+          }
         ],
         practice_outcomes: [
-          { description: "The learner can choose from the right-side Decision Options panel and justify the choice." }
+          { description: "The learner can decide whether this option deserves selection from the right-side Decision Options panel." }
         ],
         micro_materials: [
           {
-            material_type: "concept_explanation | option_concept_note | reflection_question | mini_exercise",
+            material_type: "concept_explanation | option_concept_note | competency_explanation | reflection_question | mini_exercise",
             title: "string",
             content: "Substantial teaching content, example, or exercise instructions matched to the requested length.",
             focus_concept: "string"
           }
         ],
-        reflection_questions: ["string"],
-        option_decision_guidance: [
+        knowledge_checks: [
           {
-            option_code: "string",
-            option_title: "string",
-            when_to_choose: "string",
-            caution: "string"
+            question: "string",
+            expected_answer: "string",
+            feedback: "string"
           }
         ],
-        recommended_next_action: "Review the card, then choose one of the in-app graph options."
-      }
-    ]
+        reflection_questions: ["string"],
+        option_decision_guidance: [],
+        lesson_completion_criteria: "The learner can summarize the option, name the main competency or learning demand, complete the check, and decide whether to select the option.",
+        recommended_next_action: "Complete the full lesson, then select this option from the in-app graph options only if it fits the learner's goal and evidence."
+      };
+    })
   };
 }
 
@@ -842,7 +913,8 @@ function competencyGrowthUnitDeckShape({ highlightedNode, selectedCompetency, us
         growth_unit_id: "string",
         reusable_key: `${firstText(competency.code, "knowledge")}:competency-growth`,
         title: `Build knowledge of ${competency.title || "the selected competency"}`,
-        card_type: "knowledge_concept | knowledge_application | knowledge_check",
+        lesson_type: "full_lesson",
+        card_type: "full_competency_lesson",
         estimated_minutes: guide.target_minutes_per_card || 8,
         profile_adaptation: "Explain how the content was adapted to the learner profile and the 1-5 competency level.",
         target_node_level: node.level || "occupation_or_job",
@@ -869,6 +941,15 @@ function competencyGrowthUnitDeckShape({ highlightedNode, selectedCompetency, us
         knowledge_practice_outcomes: [
           { description: "The learner can use a short self-check to identify the next understanding gap." }
         ],
+        lesson_sections: [
+          {
+            section_type: "orientation | concept_teaching | worked_example | guided_practice | self_assessment | summary",
+            title: "string",
+            content: "Substantial lesson content matched to the requested length.",
+            estimated_minutes: 2,
+            focus_concept: "string"
+          }
+        ],
         micro_materials: [
           {
             material_type: "knowledge_explanation | worked_example | misconception_check | mini_exercise | self_check",
@@ -877,6 +958,14 @@ function competencyGrowthUnitDeckShape({ highlightedNode, selectedCompetency, us
             focus_concept: "string"
           }
         ],
+        knowledge_checks: [
+          {
+            question: "string",
+            expected_answer: "string",
+            feedback: "string"
+          }
+        ],
+        lesson_completion_criteria: "The learner can explain the competency, complete the check, and identify the next knowledge gap.",
         reflection_questions: ["string"],
         recommended_next_action: "Review the knowledge card, then return to the highlighted occupation/job competency list."
       }
@@ -884,15 +973,152 @@ function competencyGrowthUnitDeckShape({ highlightedNode, selectedCompetency, us
   };
 }
 
+function matchingCompetencyProfile(option, profiles) {
+  const optionCode = firstText(option.code, option.Code, option.uri);
+  return (profiles || []).find(function (profile) {
+    return firstText(profile.option_code, profile.node_uri) === optionCode ||
+      firstText(profile.option_title) === firstText(option.title);
+  }) || {};
+}
+
+function competencySummaryForOption(profile) {
+  const rows = []
+    .concat(profile.top_esco_competencies || [])
+    .concat(profile.top_gh_competencies || [])
+    .filter(Boolean)
+    .sort(function (a, b) {
+      return Number(b.score || 0) - Number(a.score || 0);
+    })
+    .slice(0, 5);
+  if (!rows.length) {
+    return "No weighted competency profile is available for this option yet, so the learner should focus on the option meaning, work pattern, and fit signals.";
+  }
+  return rows.map(function (row) {
+    const title = firstText(row.title, row.code, "Unnamed competency");
+    return `${title} (score ${row.score || 0}, essential ${row.essential_hits || 0}, optional ${row.optional_hits || 0})`;
+  }).join("; ");
+}
+
+function optionGrowthUnitFallback({ option, level, pathText, lengthGuide, profile }) {
+  const optionTitle = option.title || "this option";
+  const profileText = competencySummaryForOption(profile);
+  const hasCompetencies = Boolean((profile.top_esco_competencies || []).length || (profile.top_gh_competencies || []).length);
+  const conceptDefinition = `${optionTitle} should be read as a standalone learning object in the career graph. It represents a possible ${level || "career"} direction with its own work settings, common tasks, vocabulary, learning demands, and fit signals. The learner does not need to compare it side by side with every other visible option inside this lesson. The useful question is simpler: what does this option mean, what kind of capability growth does it imply, and what evidence would make it worth selecting as the next path step?`;
+  const competencyMaterial = hasCompetencies
+    ? `For this option, the weighted competency evidence highlights: ${profileText}. Higher score means the competency appears more strongly across downstream jobs. Essential hits are stronger signals because they point to requirements that jobs more often treat as necessary, while optional hits suggest useful supporting knowledge or skills. Read these competencies as explanatory material: they show what the option tends to demand, what the learner may already recognize, and what learning gaps may appear after selection.`
+    : `For this option, competency evidence is not available in the current graph payload. The learner can still study the option by identifying the main work domain, common outputs, people served, tools or knowledge areas, and the kind of learning effort it may require. If the option is later opened as an occupation or job, the weighted competency profile can add more precise evidence.`;
+  return {
+    growth_unit_id: `${level}:${firstText(option.code, option.uri, optionTitle)}:explanation`,
+    reusable_key: `${level}:${firstText(option.code, option.uri, optionTitle)}:growth-unit`,
+    title: `Full lesson: ${optionTitle}`,
+    lesson_type: "full_lesson",
+    card_type: hasCompetencies ? "full_competency_lesson" : "full_option_lesson",
+    estimated_minutes: lengthGuide.target_minutes_per_card || 8,
+    profile_adaptation: "This unit keeps the material explanatory and low-pressure. It uses the requested length bucket, the current path, and available graph evidence to help the learner understand this one option before selecting it.",
+    target_decision_level: level,
+    user_state_snapshot: `The learner is on the path ${pathText} and is considering ${optionTitle} as one possible next graph step.`,
+    option_focus: {
+      option_code: option.code || option.uri || optionTitle,
+      option_title: optionTitle,
+      option_level: option.level || level,
+      option_uri: option.uri || ""
+    },
+    decision_question: `What should the learner understand about ${optionTitle} before selecting it?`,
+    decision_context: `${optionTitle} is one selectable element in the current graph. This Growth Unit explains it on its own terms instead of turning the lesson into an option-by-option comparison. The learner should use the material to understand what the option points toward, what it may ask from them, and whether the next path step feels meaningful and realistic. The current path is ${pathText}.`,
+    concept_focus: {
+      concept_id: option.code || option.uri || "option-understanding",
+      name: optionTitle,
+      definition: option.description || conceptDefinition
+    },
+    learning_outcomes: [
+      { description: `The learner can explain what ${optionTitle} means as a career-graph option.` },
+      { description: `The learner can describe the main work patterns or learning demands connected to ${optionTitle}.` },
+      { description: `The learner can identify whether ${optionTitle} has enough personal and graph evidence to select next.` }
+    ],
+    lesson_sections: [
+      {
+        section_type: "orientation",
+        title: "Lesson orientation",
+        content: `This lesson prepares the learner to understand ${optionTitle} as a complete career-graph learning object. The goal is not to rank it against other visible choices. The goal is to build enough meaning to decide whether this option deserves the next step in the Dynamic Learning Path. By the end, the learner should be able to describe the option, connect it to the current path, identify the main learning or competency demand, and make a grounded selection decision.`,
+        estimated_minutes: 1
+      },
+      {
+        section_type: "concept_teaching",
+        title: `What ${optionTitle} means`,
+        content: conceptDefinition,
+        estimated_minutes: Math.max(1, Math.round((lengthGuide.target_minutes_per_card || 8) * 0.25))
+      },
+      {
+        section_type: hasCompetencies ? "competency_teaching" : "concept_teaching",
+        title: hasCompetencies ? "Competency signals to learn" : "Meaning signals to learn",
+        content: competencyMaterial,
+        estimated_minutes: Math.max(1, Math.round((lengthGuide.target_minutes_per_card || 8) * 0.25))
+      },
+      {
+        section_type: "guided_practice",
+        title: "Guided evidence note",
+        content: `Create a short evidence note for ${optionTitle}. First, write the work or learning domain in plain language. Second, name the strongest connection to the learner's current goals, values, experience, or competencies. Third, name the biggest uncertainty. This turns the lesson into a decision-ready LMS activity: the learner is not just reading; they are producing a small artifact that shows whether the option is understandable and actionable.`,
+        estimated_minutes: Math.max(1, Math.round((lengthGuide.target_minutes_per_card || 8) * 0.2))
+      },
+      {
+        section_type: "summary",
+        title: "Selection readiness summary",
+        content: `The lesson is complete when the learner can explain ${optionTitle}, identify one important demand or competency pattern, and state whether the option should be selected now. If the explanation still feels vague, the learner should stay in the lesson and reread the concept and competency sections. If the evidence note is clear, the learner can return to the Decision Options panel and select this option if it fits.`,
+        estimated_minutes: 1
+      }
+    ],
+    practice_outcomes: [
+      { description: `The learner can make a brief evidence note for or against selecting ${optionTitle}.` }
+    ],
+    micro_materials: [
+      {
+        material_type: "concept_explanation",
+        title: "Read the option as a learning object",
+        content: `Start by treating ${optionTitle} as a concept to understand, not a winner to rank. Ask what kind of work it points toward, what problems it usually addresses, what environments it may involve, and what learning it may require. This protects the learner from choosing only because a label sounds attractive. A strong next step should make the path clearer and should connect to goals, values, experience, or realistic learning capacity.`,
+        focus_concept: optionTitle
+      },
+      {
+        material_type: hasCompetencies ? "competency_explanation" : "option_concept_note",
+        title: hasCompetencies ? "Top competency signals" : "Build meaning without competency evidence",
+        content: competencyMaterial,
+        focus_concept: hasCompetencies ? "weighted competencies" : "option meaning"
+      },
+      {
+        material_type: "mini_exercise",
+        title: "Evidence note",
+        content: `Write a short note with three lines: what ${optionTitle} appears to involve, what part connects to the learner's profile, and what uncertainty remains. If the note is concrete, the option may be ready for selection. If the note is mostly vague, the learner should reread the explanation or inspect another option's Growth Unit before choosing from the Decision Options panel.`,
+        focus_concept: "selection readiness"
+      }
+    ].slice(0, lengthGuide.micro_material_count || 3),
+    reflection_questions: [
+      `What is the clearest thing ${optionTitle} would add to the learner's path?`,
+      `Which competency, work pattern, or learning demand matters most for ${optionTitle}?`,
+      `What evidence would make selecting ${optionTitle} feel justified?`
+    ],
+    knowledge_checks: [
+      {
+        question: `In one sentence, what does ${optionTitle} mean as a career-graph option?`,
+        expected_answer: `A clear answer names the work or learning direction behind ${optionTitle}, not only the label.`,
+        feedback: "If the answer only repeats the title, return to the concept section and add work context, demands, or examples."
+      },
+      {
+        question: hasCompetencies ? "Which top competency signal seems most important, and why?" : "Which meaning signal seems most important, and why?",
+        expected_answer: hasCompetencies ? "A clear answer names one competency from the lesson and explains whether it is an essential or optional signal when available." : "A clear answer names one work pattern, output, tool, knowledge area, or learning demand from the lesson.",
+        feedback: "If the answer is generic, connect it to the specific option and the learner's current path."
+      }
+    ],
+    option_decision_guidance: [],
+    lesson_completion_criteria: `The learner can explain ${optionTitle}, complete the evidence note, answer the checks, and decide whether selecting this option is justified.`,
+    recommended_next_action: `Complete the full lesson, then select ${optionTitle} from the right-side Decision Options panel only if it fits the learner's goals and evidence.`
+  };
+}
+
 function fallbackGrowthUnitDeck(payload, lengthGuide) {
   const normalizedOptions = (payload.options || []).map(normalizeGraphOption).slice(0, 5);
-  const focus = normalizedOptions[0] || {};
   const level = payload.level || "decision";
   const pathText = payload.selectedPath && payload.selectedPath.length
     ? payload.selectedPath.map(function (item) { return item.title; }).join(" > ")
     : "starting from the broad career graph";
-  const optionTitles = normalizedOptions.map(function (item) { return item.title; }).filter(Boolean).join(", ") || "the current Decision Options";
-  const minutes = lengthGuide.target_minutes_per_card || 8;
   return {
     deck_id: `${level}:local-growth-unit`,
     target_decision_level: level,
@@ -900,68 +1126,15 @@ function fallbackGrowthUnitDeck(payload, lengthGuide) {
     options_available: normalizedOptions,
     length_guide: lengthGuide,
     generated_by: "local_fallback",
-    growth_units: [
-      {
-        growth_unit_id: `${level}:decision-concept`,
-        reusable_key: `${level}:decision-concept`,
-        title: `Understand the ${level} choice before narrowing the path`,
-        card_type: "decision_literacy",
-        estimated_minutes: minutes,
-        profile_adaptation: "This unit keeps the decision practical and grounded in the learner profile, while giving enough explanation to support an informed choice instead of a quick click.",
-        target_decision_level: level,
-        user_state_snapshot: "The learner is narrowing a broad career graph toward a more specific work role and needs enough concept knowledge to compare the visible options.",
-        decision_question: "Which direction best preserves motivation, capability fit, and realistic next-step clarity?",
-        decision_context: `At this stage the learner is not choosing a final job yet; they are reducing a wide search space into a more meaningful path. The visible Decision Options represent possible concepts in the career graph, such as sectors, occupation families, role clusters, or job directions. A useful choice should connect to the learner's goals, existing strengths, values, and learning capacity. The key is to avoid treating the highest-ranked option as automatically correct. Instead, the learner should understand what each option means, what kind of work identity it points toward, and what it would make easier or harder in later steps. The current path is ${pathText}, and the visible options are ${optionTitles}.`,
-        concept_focus: {
-          concept_id: focus.code || "career-search-narrowing",
-          name: "Career search narrowing",
-          definition: "Career search narrowing is the skill of reducing a broad opportunity space into a smaller set of meaningful directions without losing sight of personal fit. It combines three kinds of evidence: goal alignment, capability fit, and future optionality. Goal alignment asks whether the option supports what the learner wants more of in work. Capability fit asks whether existing competencies, experience, and learning agility make the path plausible. Future optionality asks whether the choice keeps enough doors open for the next graph step. The Decision Options should therefore be read as learning concepts, not only as labels. Each option teaches something about the type of work, learning path, and tradeoffs that may follow.",
-        },
-        learning_outcomes: [
-          { description: "The learner can explain how the current decision narrows a broad career search toward a more specific work role." },
-          { description: "The learner can compare Decision Options using goal alignment, capability fit, and future optionality." },
-          { description: "The learner can describe why an option may be useful even when it is not the final job target." }
-        ],
-        practice_outcomes: [
-          { description: "The learner can select one option from the right-side Decision Options panel and state the evidence behind the choice." },
-          { description: "The learner can reject an appealing option when it does not support the next narrowing step." }
-        ],
-        micro_materials: [
-          {
-            material_type: "concept_explanation",
-            title: "Read options as concepts",
-            content: "Before choosing, read each option as a concept that explains a possible direction of work. A sector option is not just an industry label; it suggests environments, problems, customers, tools, and value systems. An occupation option is not just a role family; it suggests recurring tasks, capability requirements, and learning investments. A job option is more concrete, but it still needs interpretation: it points to daily work patterns and expectations. This reading helps the learner avoid shallow matching and instead ask what each option would teach them about their next career step.",
-            focus_concept: "career-search-narrowing"
-          },
-          {
-            material_type: "mini_exercise",
-            title: "Use a three-question filter",
-            content: "For each visible Decision Option, answer three questions before choosing. First: does this option support the learner's primary goal or work values? Second: does it connect to existing competencies, experience, or a realistic learning pace? Third: does it keep the next step clear enough to continue narrowing the graph? If an option scores well on all three, it is a strong candidate. If it scores well on only one, it may still be interesting, but the learner should know what risk or uncertainty they are accepting.",
-            focus_concept: "decision evidence"
-          },
-          {
-            material_type: "option_concept_note",
-            title: "What the shortlist means",
-            content: `The current shortlist contains ${normalizedOptions.length} visible options: ${optionTitles}. This does not mean the rest of the career graph disappeared. It means the system is presenting a smaller, more usable choice set for the current decision. The learner should use the shortlist to make progress, while remembering that each selection opens a new branch and hides many less relevant branches. Good narrowing is not about finding perfection immediately; it is about choosing the next branch that has the best evidence now.`,
-            focus_concept: "shortlist"
-          }
-        ],
-        reflection_questions: [
-          "Which option would make the next step clearer rather than just more interesting?",
-          "What evidence from the profile supports the strongest option?",
-          "Which option looks attractive but may not fit the learner's current learning capacity?"
-        ],
-        option_decision_guidance: normalizedOptions.map(function (option) {
-          return {
-            option_code: option.code || option.uri || option.title,
-            option_title: option.title,
-            when_to_choose: "Choose this when its work direction, capability requirements, and next graph step fit the learner's current goals.",
-            caution: "Do not choose it only because the label sounds appealing; check the evidence from the profile and the next-step clarity."
-          };
-        }),
-        recommended_next_action: "Review the concept, then choose one option from the right-side Decision Options panel."
-      }
-    ]
+    growth_units: normalizedOptions.map(function (option) {
+      return optionGrowthUnitFallback({
+        option,
+        level,
+        pathText,
+        lengthGuide,
+        profile: matchingCompetencyProfile(option, payload.weighted_competency_profiles || payload.competencyProfiles)
+      });
+    })
   };
 }
 
@@ -979,22 +1152,30 @@ function normalizeGrowthUnitDeck(result, payload, lengthGuide) {
     nestedDeck.units ||
     nestedDeck.cards;
   if (!Array.isArray(units) || !units.length) return fallback;
+  const minimumUnitCount = (payload.options || []).length ? Math.min(5, payload.options.length) : units.length;
+  const normalizedUnits = units.slice();
+  while (normalizedUnits.length < minimumUnitCount) {
+    normalizedUnits.push(fallback.growth_units[normalizedUnits.length]);
+  }
   return Object.assign({}, fallback, source, nestedDeck, {
     deck_id: source.deck_id || nestedDeck.deck_id || fallback.deck_id,
     target_decision_level: source.target_decision_level || nestedDeck.target_decision_level || fallback.target_decision_level,
     decision_context: source.decision_context || nestedDeck.decision_context || fallback.decision_context,
     options_available: source.options_available || nestedDeck.options_available || fallback.options_available,
     length_guide: source.length_guide || nestedDeck.length_guide || lengthGuide,
-    growth_units: units.map(function (unit, index) {
+    growth_units: normalizedUnits.filter(Boolean).map(function (unit, index) {
       const fallbackUnit = fallback.growth_units[Math.min(index, fallback.growth_units.length - 1)];
       return Object.assign({}, fallbackUnit, unit, {
         growth_unit_id: unit.growth_unit_id || unit.id || `${source.deck_id || fallback.deck_id}:${index + 1}`,
         target_decision_level: unit.target_decision_level || payload.level || fallback.target_decision_level,
         estimated_minutes: unit.estimated_minutes || lengthGuide.target_minutes_per_card || fallbackUnit.estimated_minutes,
         learning_outcomes: Array.isArray(unit.learning_outcomes) && unit.learning_outcomes.length ? unit.learning_outcomes : fallbackUnit.learning_outcomes,
+        lesson_sections: Array.isArray(unit.lesson_sections) && unit.lesson_sections.length ? unit.lesson_sections : fallbackUnit.lesson_sections,
         practice_outcomes: Array.isArray(unit.practice_outcomes) && unit.practice_outcomes.length ? unit.practice_outcomes : fallbackUnit.practice_outcomes,
         micro_materials: Array.isArray(unit.micro_materials) && unit.micro_materials.length ? unit.micro_materials : fallbackUnit.micro_materials,
+        knowledge_checks: Array.isArray(unit.knowledge_checks) && unit.knowledge_checks.length ? unit.knowledge_checks : fallbackUnit.knowledge_checks,
         reflection_questions: Array.isArray(unit.reflection_questions) && unit.reflection_questions.length ? unit.reflection_questions : fallbackUnit.reflection_questions,
+        lesson_completion_criteria: unit.lesson_completion_criteria || fallbackUnit.lesson_completion_criteria,
         recommended_next_action: unit.recommended_next_action || fallbackUnit.recommended_next_action
       });
     })
@@ -1028,7 +1209,8 @@ function fallbackCompetencyGrowthUnitDeck(payload, lengthGuide) {
         growth_unit_id: `${firstText(competency.code, "knowledge")}:concept-foundation`,
         reusable_key: `${firstText(competency.code, "knowledge")}:competency-growth`,
         title: `Understand ${competencyTitle}`,
-        card_type: "knowledge_concept",
+        lesson_type: "full_lesson",
+        card_type: "full_competency_lesson",
         estimated_minutes: minutes,
         profile_adaptation: `This card is adapted for a learner at level ${userCompetencyLevel} (${levelLabel}) in this knowledge area. It keeps the explanation concrete, connects the knowledge to ${nodeTitle}, and avoids turning the content into a career-choice recommendation.`,
         target_node_level: node.level || "occupation_or_job",
@@ -1060,6 +1242,43 @@ function fallbackCompetencyGrowthUnitDeck(payload, lengthGuide) {
         knowledge_practice_outcomes: [
           { description: "The learner can complete a short self-check that separates familiar terms from concepts they can explain." }
         ],
+        lesson_sections: [
+          {
+            section_type: "orientation",
+            title: "Why this knowledge is here",
+            content: `${competencyTitle} is being taught because it appears as evidence inside the weighted competency profile for ${nodeTitle}. Treat this lesson as preparation for understanding the role context, not as a recommendation to choose the role. The learner should leave with a clearer definition, a concrete example, and a better sense of the next knowledge gap.`,
+            estimated_minutes: Math.max(1, Math.round(minutes * 0.2)),
+            focus_concept: "role-relevant knowledge"
+          },
+          {
+            section_type: "concept_teaching",
+            title: "Build the core meaning",
+            content: `Start by defining ${competencyTitle} as a knowledge area, not as a task. Knowledge means the learner understands concepts, vocabulary, relationships, principles, and common situations. At level ${userCompetencyLevel}, the useful first move is to separate recognition from explanation. If the learner only recognizes the label, they should focus on plain-language meaning and examples. If they can already explain it, they should focus on where the concept becomes important in ${nodeTitle}.`,
+            estimated_minutes: Math.max(1, Math.round(minutes * 0.25)),
+            focus_concept: competencyTitle
+          },
+          {
+            section_type: "worked_example",
+            title: "Connect it to the role context",
+            content: `In ${nodeTitle}, ${competencyTitle} matters because it helps the learner interpret what the work expects before they judge fit. The weighted profile points to this competency through sources such as ${(competency.sources || []).slice(0, 3).join(", ") || "downstream job requirements"}. Read that evidence as a relevance signal: the knowledge appears often enough that understanding it can make later learning and role comparison more precise.`,
+            estimated_minutes: Math.max(1, Math.round(minutes * 0.25)),
+            focus_concept: "role relevance"
+          },
+          {
+            section_type: "guided_practice",
+            title: "Check current understanding",
+            content: `Write three short statements: one definition of ${competencyTitle}, one example of where it appears in ${nodeTitle}, and one question you still cannot answer. If the definition is vague, stay with basic vocabulary. If the example is missing, look for work situations connected to the highlighted role. If the question is specific, the learner is ready for a deeper lesson or the next competency.`,
+            estimated_minutes: Math.max(1, Math.round(minutes * 0.2)),
+            focus_concept: "knowledge confidence"
+          },
+          {
+            section_type: "summary",
+            title: "What good enough looks like",
+            content: `The lesson is complete when the learner can explain ${competencyTitle} without only repeating the title, name one place it matters in ${nodeTitle}, and identify one next concept or term to learn. That is enough progress for this competency Growth Unit.`,
+            estimated_minutes: Math.max(1, Math.round(minutes * 0.1)),
+            focus_concept: "completion"
+          }
+        ],
         micro_materials: [
           {
             material_type: "knowledge_explanation",
@@ -1085,6 +1304,19 @@ function fallbackCompetencyGrowthUnitDeck(payload, lengthGuide) {
           `Where would this knowledge show up inside ${nodeTitle}?`,
           "What is the smallest knowledge gap to close next?"
         ],
+        knowledge_checks: [
+          {
+            question: `What is the difference between recognizing the term ${competencyTitle} and understanding it well enough to use it?`,
+            expected_answer: "A strong answer explains the concept in plain language, gives a role-relevant example, and names one boundary or uncertainty.",
+            feedback: "If the answer only repeats the competency title, return to the concept section and build a more concrete definition."
+          },
+          {
+            question: `Why does ${competencyTitle} matter for ${nodeTitle}?`,
+            expected_answer: "A strong answer connects the competency to tasks, requirements, learning gaps, or downstream job evidence without treating it as a recommendation.",
+            feedback: "Use the weighted evidence as relevance context, then explain the work situation in ordinary language."
+          }
+        ],
+        lesson_completion_criteria: `The learner can explain ${competencyTitle}, connect it to ${nodeTitle}, complete the knowledge check, and name one next knowledge gap.`,
         recommended_next_action: "Review the knowledge card, mark confidence for this competency, then return to the highlighted occupation/job competency list."
       }
     ] : []
@@ -1118,12 +1350,16 @@ function normalizeCompetencyGrowthUnitDeck(result, payload, lengthGuide) {
       const fallbackUnit = fallback.growth_units[Math.min(index, Math.max(0, fallback.growth_units.length - 1))] || {};
       return Object.assign({}, fallbackUnit, unit, {
         growth_unit_id: unit.growth_unit_id || unit.id || `${fallback.deck_id}:${index + 1}`,
-        card_type: unit.card_type || fallbackUnit.card_type || "knowledge_concept",
+        lesson_type: unit.lesson_type || fallbackUnit.lesson_type || "full_lesson",
+        card_type: unit.card_type || fallbackUnit.card_type || "full_competency_lesson",
         estimated_minutes: unit.estimated_minutes || lengthGuide.target_minutes_per_card || fallbackUnit.estimated_minutes,
         learning_outcomes: Array.isArray(unit.learning_outcomes) && unit.learning_outcomes.length ? unit.learning_outcomes : fallbackUnit.learning_outcomes,
         knowledge_practice_outcomes: Array.isArray(unit.knowledge_practice_outcomes) && unit.knowledge_practice_outcomes.length ? unit.knowledge_practice_outcomes : fallbackUnit.knowledge_practice_outcomes,
+        lesson_sections: Array.isArray(unit.lesson_sections) && unit.lesson_sections.length ? unit.lesson_sections : fallbackUnit.lesson_sections,
         micro_materials: Array.isArray(unit.micro_materials) && unit.micro_materials.length ? unit.micro_materials : fallbackUnit.micro_materials,
+        knowledge_checks: Array.isArray(unit.knowledge_checks) && unit.knowledge_checks.length ? unit.knowledge_checks : fallbackUnit.knowledge_checks,
         reflection_questions: Array.isArray(unit.reflection_questions) && unit.reflection_questions.length ? unit.reflection_questions : fallbackUnit.reflection_questions,
+        lesson_completion_criteria: unit.lesson_completion_criteria || fallbackUnit.lesson_completion_criteria,
         recommended_next_action: unit.recommended_next_action || fallbackUnit.recommended_next_action
       });
     }) : fallback.growth_units
@@ -1187,13 +1423,222 @@ async function buildGrowthUnitCompetencyProfiles(payload) {
   return profiles;
 }
 
+function optionGrowthUnitCacheKey(option, level, lengthGuide) {
+  return learningMaterialCacheKey([
+    "growth_unit",
+    "option",
+    level || option.level || "decision",
+    graphNodeKey(option, "option"),
+    lengthGuide.length_bucket || lengthGuide.requested_length
+  ]);
+}
+
+function competencyGrowthUnitCacheKey(node, competency, lengthGuide) {
+  return learningMaterialCacheKey([
+    "growth_unit",
+    "competency",
+    graphNodeKey(node, "node"),
+    graphNodeKey(competency, "competency"),
+    lengthGuide.length_bucket || lengthGuide.requested_length
+  ]);
+}
+
+async function getCachedOptionGrowthUnits(payload, lengthGuide) {
+  if (!driver) return new Map();
+  const level = payload.level || "decision";
+  const options = (payload.options || []).map(normalizeGraphOption).slice(0, 5);
+  const entries = await Promise.all(options.map(async function (option) {
+    const cacheKey = optionGrowthUnitCacheKey(option, level, lengthGuide);
+    try {
+      const rows = await readQuery(`
+        MATCH (target)-[:HAS_LEARNING_MATERIAL]->(material:LearningMaterial {cache_key: $cacheKey})
+        WHERE target:Sector OR target:Occupation OR target:Job
+        RETURN material.payload_json AS payloadJson,
+               material.updated_at AS updatedAt,
+               material.length_bucket AS lengthBucket
+        ORDER BY material.updated_at DESC
+        LIMIT 1
+      `, { cacheKey });
+      const unit = parseJsonProperty(rows[0] && rows[0].payloadJson, null);
+      return unit ? [cacheKey, Object.assign({}, unit, {
+        cache_status: "neo4j_cache",
+        cached_at: rows[0].updatedAt
+      })] : null;
+    } catch (error) {
+      console.warn(`Learning material cache read failed for ${cacheKey}: ${error.message}`);
+      return null;
+    }
+  }));
+  return new Map(entries.filter(Boolean));
+}
+
+async function saveOptionGrowthUnits(deck, payload, lengthGuide) {
+  if (!driver || !deck || !Array.isArray(deck.growth_units)) return;
+  const level = payload.level || deck.target_decision_level || "decision";
+  const options = (payload.options || []).map(normalizeGraphOption).slice(0, 5);
+  const now = new Date().toISOString();
+  await Promise.all(deck.growth_units.slice(0, options.length).map(async function (unit, index) {
+    const option = options[index];
+    if (!option) return;
+    const cacheKey = optionGrowthUnitCacheKey(option, level, lengthGuide);
+    const payloadJson = JSON.stringify(Object.assign({}, unit, {
+      cached_for: {
+        material_type: "option_growth_unit",
+        target_level: level,
+        target_code: option.code || "",
+        target_uri: option.uri || "",
+        length_bucket: lengthGuide.length_bucket
+      }
+    }));
+    try {
+      await writeQuery(`
+        MATCH (target)
+        WHERE (target.uri = $targetUri OR target.Code = $targetCode)
+          AND (target:Sector OR target:Occupation OR target:Job)
+        MERGE (material:LearningMaterial {cache_key: $cacheKey})
+        SET material.material_type = "option_growth_unit",
+            material.target_level = $targetLevel,
+            material.target_code = $targetCode,
+            material.target_uri = $targetUri,
+            material.length_bucket = $lengthBucket,
+            material.requested_length = $requestedLength,
+            material.title = $title,
+            material.payload_json = $payloadJson,
+            material.updated_at = $now,
+            material.created_at = coalesce(material.created_at, $now)
+        MERGE (target)-[:HAS_LEARNING_MATERIAL]->(material)
+        RETURN material.cache_key AS cache_key
+      `, {
+        cacheKey,
+        targetLevel: level,
+        targetCode: option.code || "",
+        targetUri: option.uri || "",
+        lengthBucket: lengthGuide.length_bucket || "",
+        requestedLength: lengthGuide.requested_length || "",
+        title: unit.title || option.title || "",
+        payloadJson,
+        now
+      });
+    } catch (error) {
+      console.warn(`Learning material cache write failed for ${cacheKey}: ${error.message}`);
+    }
+  }));
+}
+
+function cachedOptionGrowthUnitDeck(payload, lengthGuide, cachedUnits, generatedBy) {
+  const fallback = fallbackGrowthUnitDeck(payload, lengthGuide);
+  const level = payload.level || fallback.target_decision_level || "decision";
+  const options = (payload.options || []).map(normalizeGraphOption).slice(0, 5);
+  return Object.assign({}, fallback, {
+    deck_id: `${level}:${lengthGuide.length_bucket || "length"}:cached-growth-unit`,
+    generated_by: generatedBy || "neo4j_cache",
+    cache_status: generatedBy || "neo4j_cache",
+    growth_units: options.map(function (option, index) {
+      const cacheKey = optionGrowthUnitCacheKey(option, level, lengthGuide);
+      return cachedUnits.get(cacheKey) || fallback.growth_units[index];
+    })
+  });
+}
+
+async function getCachedCompetencyGrowthUnit(payload, lengthGuide) {
+  if (!driver) return null;
+  const node = normalizeGraphOption(payload.highlightedNode || payload.highlighted_node || payload.node);
+  const competency = normalizeCompetencyOption(payload.selectedCompetency || payload.selected_competency || payload.competency);
+  const cacheKey = competencyGrowthUnitCacheKey(node, competency, lengthGuide);
+  try {
+    const rows = await readQuery(`
+      MATCH (target)-[:HAS_CONTEXTUAL_LEARNING_MATERIAL]->(material:LearningMaterial {cache_key: $cacheKey})
+      MATCH (competency)-[:HAS_LEARNING_MATERIAL]->(material)
+      WHERE (target:Occupation OR target:Job)
+        AND (competency:Competency OR competency:GH_Competency)
+      RETURN material.payload_json AS payloadJson,
+             material.updated_at AS updatedAt
+      ORDER BY material.updated_at DESC
+      LIMIT 1
+    `, { cacheKey });
+    const deck = parseJsonProperty(rows[0] && rows[0].payloadJson, null);
+    return deck ? cacheGeneratedBy(Object.assign({}, deck, { cached_at: rows[0].updatedAt }), "neo4j_cache") : null;
+  } catch (error) {
+    console.warn(`Competency learning material cache read failed for ${cacheKey}: ${error.message}`);
+    return null;
+  }
+}
+
+async function saveCompetencyGrowthUnit(deck, payload, lengthGuide) {
+  if (!driver || !deck) return;
+  const node = normalizeGraphOption(payload.highlightedNode || payload.highlighted_node || payload.node);
+  const competency = normalizeCompetencyOption(payload.selectedCompetency || payload.selected_competency || payload.competency);
+  const cacheKey = competencyGrowthUnitCacheKey(node, competency, lengthGuide);
+  const now = new Date().toISOString();
+  const payloadJson = JSON.stringify(Object.assign({}, deck, {
+    cached_for: {
+      material_type: "competency_growth_unit",
+      highlighted_node_code: node.code || "",
+      highlighted_node_uri: node.uri || "",
+      competency_code: competency.code || "",
+      competency_uri: competency.uri || "",
+      length_bucket: lengthGuide.length_bucket
+    }
+  }));
+  try {
+    await writeQuery(`
+      MATCH (target)
+      WHERE (target.uri = $targetUri OR target.Code = $targetCode)
+        AND (target:Occupation OR target:Job)
+      MATCH (competency)
+      WHERE (competency.uri = $competencyUri OR competency.Code = $competencyCode)
+        AND (competency:Competency OR competency:GH_Competency)
+      MERGE (material:LearningMaterial {cache_key: $cacheKey})
+      SET material.material_type = "competency_growth_unit",
+          material.target_code = $targetCode,
+          material.target_uri = $targetUri,
+          material.competency_code = $competencyCode,
+          material.competency_uri = $competencyUri,
+          material.length_bucket = $lengthBucket,
+          material.requested_length = $requestedLength,
+          material.title = $title,
+          material.payload_json = $payloadJson,
+          material.updated_at = $now,
+          material.created_at = coalesce(material.created_at, $now)
+      MERGE (target)-[:HAS_CONTEXTUAL_LEARNING_MATERIAL]->(material)
+      MERGE (competency)-[:HAS_LEARNING_MATERIAL]->(material)
+      RETURN material.cache_key AS cache_key
+    `, {
+      cacheKey,
+      targetCode: node.code || "",
+      targetUri: node.uri || "",
+      competencyCode: competency.code || "",
+      competencyUri: competency.uri || "",
+      lengthBucket: lengthGuide.length_bucket || "",
+      requestedLength: lengthGuide.requested_length || "",
+      title: deck.growth_units && deck.growth_units[0] ? deck.growth_units[0].title : competency.title || "",
+      payloadJson,
+      now
+    });
+  } catch (error) {
+    console.warn(`Competency learning material cache write failed for ${cacheKey}: ${error.message}`);
+  }
+}
+
 async function growthUnit(payload) {
   if (!payload.options || !payload.options.length) {
-    throw serviceError("No current graph options are available. A Growth Unit card deck cannot be generated.", 422);
+    throw serviceError("No current graph options are available. A Growth Unit lesson deck cannot be generated.", 422);
   }
   const lengthGuide = growthUnitLengthGuide(payload);
-  const competencyProfiles = await buildGrowthUnitCompetencyProfiles(payload);
-  const enrichedPayload = Object.assign({}, payload, {
+  const normalizedOptions = (payload.options || []).map(normalizeGraphOption).slice(0, 5);
+  const cachedUnits = await getCachedOptionGrowthUnits(Object.assign({}, payload, { options: normalizedOptions }), lengthGuide);
+  const level = payload.level || "decision";
+  const missingOptions = normalizedOptions.filter(function (option) {
+    return !cachedUnits.has(optionGrowthUnitCacheKey(option, level, lengthGuide));
+  });
+
+  if (!missingOptions.length && normalizedOptions.length) {
+    return cachedOptionGrowthUnitDeck(Object.assign({}, payload, { options: normalizedOptions }), lengthGuide, cachedUnits, "neo4j_cache");
+  }
+
+  const generationPayload = Object.assign({}, payload, { options: missingOptions });
+  const competencyProfiles = await buildGrowthUnitCompetencyProfiles(generationPayload);
+  const enrichedPayload = Object.assign({}, generationPayload, {
     competencyProfiles,
     weighted_competency_profiles: competencyProfiles
   });
@@ -1205,7 +1650,21 @@ async function growthUnit(payload) {
     profileSignal: profileSignal(payload.profile)
   });
   const result = await askGemini(prompt, fallbackGrowthUnitDeck(enrichedPayload, lengthGuide));
-  return normalizeGrowthUnitDeck(result, enrichedPayload, lengthGuide);
+  const generatedDeck = normalizeGrowthUnitDeck(result, enrichedPayload, lengthGuide);
+  await saveOptionGrowthUnits(generatedDeck, enrichedPayload, lengthGuide);
+
+  generatedDeck.growth_units.forEach(function (unit, index) {
+    const option = missingOptions[index];
+    if (!option) return;
+    cachedUnits.set(optionGrowthUnitCacheKey(option, level, lengthGuide), unit);
+  });
+
+  return cachedOptionGrowthUnitDeck(
+    Object.assign({}, payload, { options: normalizedOptions }),
+    lengthGuide,
+    cachedUnits,
+    cachedUnits.size === missingOptions.length ? "generated_and_cached" : "neo4j_cache_mixed"
+  );
 }
 
 async function competencyGrowthUnit(payload) {
@@ -1230,6 +1689,9 @@ async function competencyGrowthUnit(payload) {
   if (!isKnowledgeCompetency(enrichedPayload.selectedCompetency)) {
     return fallback;
   }
+  const cachedDeck = await getCachedCompetencyGrowthUnit(enrichedPayload, lengthGuide);
+  if (cachedDeck) return cachedDeck;
+
   const shape = competencyGrowthUnitDeckShape({
     highlightedNode: enrichedPayload.highlightedNode,
     selectedCompetency: enrichedPayload.selectedCompetency,
@@ -1243,7 +1705,9 @@ async function competencyGrowthUnit(payload) {
     profileSignal: profileSignal(payload.profile)
   });
   const result = await askGemini(prompt, fallback);
-  return normalizeCompetencyGrowthUnitDeck(result, enrichedPayload, lengthGuide);
+  const deck = normalizeCompetencyGrowthUnitDeck(result, enrichedPayload, lengthGuide);
+  await saveCompetencyGrowthUnit(deck, enrichedPayload, lengthGuide);
+  return cacheGeneratedBy(deck, "generated_and_cached");
 }
 
 app.get("/api/status", async (_req, res) => {
