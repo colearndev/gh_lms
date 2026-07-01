@@ -79,6 +79,9 @@ Run both the Express API and Vite frontend:profiles
 
 ```bash
 npm run dev
+
+reachable from outside
+npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
 Open the frontend:

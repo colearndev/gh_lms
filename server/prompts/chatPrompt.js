@@ -1,5 +1,9 @@
+const { renderPromptTemplate } = require("./promptTemplate");
+
 function createChatPrompt(context) {
-  return `Return JSON {"message":"..."} as a concise career coach. Do not diagnose. Context: ${JSON.stringify(context)}`;
+  return renderPromptTemplate("chat.md", {
+    context_json: JSON.stringify(context)
+  });
 }
 
 module.exports = {
